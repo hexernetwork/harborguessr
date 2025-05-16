@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { fetchHarborTrivia, getUserLanguage } from "@/lib/data"
-import { getTranslations } from "@/lib/db-utils"
+import { fetchHarborTrivia } from "@/lib/data"
 import ScoreDisplay from "@/components/score-display"
+import { useLanguage } from "@/contexts/language-context"
 
 export default function TriviaGame() {
   const [questions, setQuestions] = useState([])
@@ -20,24 +20,19 @@ export default function TriviaGame() {
   const [isAnswered, setIsAnswered] = useState(false)
   const [timeLeft, setTimeLeft] = useState(15)
   const [timerActive, setTimerActive] = useState(false)
-  const [language, setLanguage] = useState("en")
-  const [translations, setTranslations] = useState({})
+
+  const { language } = useLanguage()
 
   useEffect(() => {
-    // Get user's preferred language
-    const userLang = getUserLanguage()
-    setLanguage(userLang)
-    setTranslations(getTranslations(userLang))
-
     async function loadData() {
-      const data = await fetchHarborTrivia(userLang)
+      const data = await fetchHarborTrivia(language)
       setQuestions(data)
       setLoading(false)
       setTimerActive(true)
     }
 
     loadData()
-  }, [])
+  }, [language])
 
   useEffect(() => {
     let timer
@@ -95,9 +90,7 @@ export default function TriviaGame() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
         <div className="text-center">
           <RefreshCw className="h-10 w-10 mx-auto animate-spin text-teal-600 dark:text-teal-400" />
-          <p className="mt-4 text-slate-600 dark:text-slate-400">
-            {translations.loadingTrivia || "Loading trivia questions..."}
-          </p>
+          <p className="mt-4 text-slate-600 dark:text-slate-400">Loading trivia questions...</p>
         </div>
       </div>
     )
@@ -113,13 +106,13 @@ export default function TriviaGame() {
           <Link href="/">
             <Button variant="ghost" className="flex items-center gap-2">
               <ArrowLeft className="h-4 w-4" />
-              {translations.backToHome || "Back to Home"}
+              Back to Home
             </Button>
           </Link>
 
           <div className="flex items-center gap-4">
             <Badge variant="outline" className="text-sm py-1 px-3">
-              {translations.question || "Question"} {currentQuestionIndex + 1}/{questions.length}
+              Question {currentQuestionIndex + 1}/{questions.length}
             </Badge>
             <ScoreDisplay score={score} />
           </div>
@@ -129,9 +122,7 @@ export default function TriviaGame() {
           <Card className="shadow-lg">
             <CardHeader className="pb-2">
               <div className="flex justify-between items-center">
-                <CardTitle className="text-xl text-slate-800 dark:text-white">
-                  {translations.harborTrivia || "Harbor Trivia"}
-                </CardTitle>
+                <CardTitle className="text-xl text-slate-800 dark:text-white">Harbor Trivia</CardTitle>
                 <Badge className={`${timeLeft < 5 ? "bg-red-500" : timeLeft < 10 ? "bg-amber-500" : "bg-green-500"}`}>
                   {timeLeft}s
                 </Badge>
@@ -194,9 +185,7 @@ export default function TriviaGame() {
                 <div className="w-full">
                   <p className="text-sm mb-3 text-slate-600 dark:text-slate-400">{currentQuestion.explanation}</p>
                   <Button onClick={nextQuestion} className="w-full bg-teal-600 hover:bg-teal-700">
-                    {currentQuestionIndex < questions.length - 1
-                      ? translations.nextQuestion || "Next Question"
-                      : translations.seeFinalScore || "See Final Score"}
+                    {currentQuestionIndex < questions.length - 1 ? "Next Question" : "See Final Score"}
                   </Button>
                 </div>
               </CardFooter>

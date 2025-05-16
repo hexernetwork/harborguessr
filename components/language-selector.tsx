@@ -1,63 +1,83 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Globe } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { getUserLanguage, setUserLanguage } from "@/lib/data"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { supabase } from "@/lib/supabase"
+import { updateUserPreferredLanguage } from "@/lib/supabase-data"
 
 export default function LanguageSelector() {
-  const [language, setLanguage] = useState("en")
-  const [isOpen, setIsOpen] = useState(false)
+  const router = useRouter()
+  const [language, setLanguage] = useState("fi") // Set Finnish as default
+  const [user, setUser] = useState(null)
 
   useEffect(() => {
-    setLanguage(getUserLanguage())
+    // Get language from localStorage or default to Finnish
+    const storedLanguage = localStorage.getItem("preferredLanguage") || "fi"
+    setLanguage(storedLanguage)
+
+    // Get current user
+    const getUser = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        setUser(session?.user || null)
+      } catch (error) {
+        console.error("Error getting user:", error)
+      }
+    }
+
+    getUser()
   }, [])
 
-  const changeLanguage = (lang) => {
-    setLanguage(lang)
-    setUserLanguage(lang)
-    setIsOpen(false)
+  const changeLanguage = async (newLanguage) => {
+    // Update state
+    setLanguage(newLanguage)
 
-    // Reload the page to apply language changes
-    window.location.reload()
+    // Save to localStorage
+    localStorage.setItem("preferredLanguage", newLanguage)
+
+    // If user is logged in, save to their profile
+    if (user) {
+      await updateUserPreferredLanguage(user.id, newLanguage)
+    }
+
+    // Refresh the page to apply the language change
+    router.refresh()
   }
 
-  return (
-    <div className="relative">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <Globe className="h-4 w-4" />
-        <span className="uppercase text-xs">{language}</span>
-      </Button>
+  // Language options with emoji flags
+  const languages = [
+    { code: "en", name: "English", flag: "🇬🇧" },
+    { code: "fi", name: "Suomi", flag: "🇫🇮" },
+    { code: "sv", name: "Svenska", flag: "🇸🇪" },
+  ]
 
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-32 bg-white dark:bg-slate-800 rounded-md shadow-lg z-50 overflow-hidden">
-          <div className="py-1">
-            <button
-              className={`w-full text-left px-4 py-2 text-sm ${language === "en" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "hover:bg-slate-100 dark:hover:bg-slate-700"}`}
-              onClick={() => changeLanguage("en")}
-            >
-              English
-            </button>
-            <button
-              className={`w-full text-left px-4 py-2 text-sm ${language === "fi" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "hover:bg-slate-100 dark:hover:bg-slate-700"}`}
-              onClick={() => changeLanguage("fi")}
-            >
-              Suomi
-            </button>
-            <button
-              className={`w-full text-left px-4 py-2 text-sm ${language === "sv" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "hover:bg-slate-100 dark:hover:bg-slate-700"}`}
-              onClick={() => changeLanguage("sv")}
-            >
-              Svenska
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+  // Find current language details
+  const currentLanguage = languages.find((lang) => lang.code === language) || languages[1] // Default to Finnish
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="relative flex items-center gap-1 px-2">
+          <span className="text-lg">{currentLanguage.flag}</span>
+          <span className="sr-only">Change language</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {languages.map((lang) => (
+          <DropdownMenuItem
+            key={lang.code}
+            onClick={() => changeLanguage(lang.code)}
+            className={language === lang.code ? "bg-slate-100 dark:bg-slate-800" : ""}
+          >
+            <span className="mr-2 text-lg">{lang.flag}</span>
+            {lang.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

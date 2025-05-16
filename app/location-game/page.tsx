@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { useLanguage } from "@/contexts/language-context"
 
 export default function LocationGame() {
   const [currentHarbor, setCurrentHarbor] = useState(null)
@@ -30,17 +31,19 @@ export default function LocationGame() {
   const [showHarborNames, setShowHarborNames] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchedLocation, setSearchedLocation] = useState(null)
+  const [showResultPopup, setShowResultPopup] = useState(false)
+  const { language } = useLanguage()
 
   useEffect(() => {
     async function loadData() {
-      const data = await fetchHarborData()
+      const data = await fetchHarborData(language)
       setHarbors(data)
       selectRandomHarbor(data)
       setLoading(false)
     }
 
     loadData()
-  }, [])
+  }, [language])
 
   const selectRandomHarbor = (harborList) => {
     const randomIndex = Math.floor(Math.random() * harborList.length)
@@ -89,6 +92,7 @@ export default function LocationGame() {
         type: "success",
         message: `Great job! You found ${currentHarbor.name}. You earned ${attemptScore} points.`,
       })
+      setShowResultPopup(true)
       setCorrectGuess(true)
       setGameOver(true)
     } else {
@@ -102,6 +106,7 @@ export default function LocationGame() {
           type: "error",
           message: `Out of guesses! The correct location was ${currentHarbor.name}.`,
         })
+        setShowResultPopup(true)
         setGameOver(true)
       } else {
         // Show next hint
@@ -109,6 +114,7 @@ export default function LocationGame() {
           type: "warning",
           message: `Your guess was ${calculatedDistance} km away. Try again! (${5 - newGuessCount} guesses left)`,
         })
+        setShowResultPopup(true)
         setCurrentHintIndex(newGuessCount)
         setSelectedLocation(null) // Clear the selected location for the next guess
       }
@@ -145,10 +151,17 @@ export default function LocationGame() {
     const foundHarbor = harbors.find((harbor) => harbor.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
     if (foundHarbor) {
+      // Set the searched location for the map marker
       setSearchedLocation({
         lat: foundHarbor.coordinates.lat,
         lng: foundHarbor.coordinates.lng,
         name: foundHarbor.name,
+      })
+
+      // Also set as selected location to enable the Confirm Guess button
+      setSelectedLocation({
+        lat: foundHarbor.coordinates.lat,
+        lng: foundHarbor.coordinates.lng,
       })
 
       // Clear search after successful search
@@ -166,6 +179,16 @@ export default function LocationGame() {
       }, 3000)
     }
   }
+
+  const [popupRound, setPopupRound] = useState(round)
+
+  useEffect(() => {
+    setPopupRound(round)
+  }, [round])
+
+  useEffect(() => {
+    setShowResultPopup(false)
+  }, [popupRound])
 
   if (loading) {
     return (
@@ -314,7 +337,7 @@ export default function LocationGame() {
                   </div>
                   <Button
                     onClick={handleGuess}
-                    className="w-full bg-blue-600 hover:bg-blue-700"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                     disabled={!selectedLocation}
                   >
                     <Anchor className="mr-2 h-4 w-4" />
@@ -373,6 +396,105 @@ export default function LocationGame() {
             />
           </div>
         </div>
+        {/* Result Popup for Mobile */}
+        {showResultPopup && feedback && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 md:hidden">
+            <div
+              className={`bg-white dark:bg-slate-800 rounded-lg shadow-lg max-w-sm w-full p-4 ${
+                feedback.type === "success"
+                  ? "border-l-4 border-green-500"
+                  : feedback.type === "error"
+                    ? "border-l-4 border-red-500"
+                    : "border-l-4 border-amber-500"
+              }`}
+            >
+              <div className="flex items-start mb-4">
+                <div
+                  className={`rounded-full p-2 mr-3 ${
+                    feedback.type === "success"
+                      ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+                      : feedback.type === "error"
+                        ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                        : "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
+                  }`}
+                >
+                  {feedback.type === "success" ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                  ) : feedback.type === "error" ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="15" y1="9" x2="9" y2="15"></line>
+                      <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="8" x2="12" y2="12"></line>
+                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-slate-800 dark:text-white">
+                    {feedback.type === "success" ? "Correct!" : feedback.type === "error" ? "Game Over" : "Try Again"}
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-300 mt-1">{feedback.message}</p>
+                  {distance && feedback.type !== "success" && (
+                    <p className="text-slate-600 dark:text-slate-300 mt-2 font-medium">
+                      Your guess was <span className="text-amber-600 dark:text-amber-400">{distance} km</span> away from
+                      the actual location.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Button
+                onClick={() => setShowResultPopup(false)}
+                className={`w-full ${
+                  feedback.type === "success"
+                    ? "bg-green-600 hover:bg-green-700"
+                    : feedback.type === "error"
+                      ? "bg-red-600 hover:bg-red-700"
+                      : "bg-amber-600 hover:bg-amber-700"
+                } text-white`}
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

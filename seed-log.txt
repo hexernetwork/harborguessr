@@ -1,0 +1,85 @@
+Database Seed Log - Started at 2025-05-16T11:14:02.357Z
+
+[2025-05-16T11:14:02.358Z] INFO: Starting database seeding process...
+[2025-05-16T11:14:02.930Z] INFO: Starting to seed harbors...
+[2025-05-16T11:14:02.931Z] INFO: Processing 3 harbors for language: en
+[2025-05-16T11:14:03.054Z] ERROR: Failed to insert harbor: Elisaari (en)
+[object Object]
+[2025-05-16T11:14:03.140Z] ERROR: Failed to insert harbor: Örö (en)
+[object Object]
+[2025-05-16T11:14:03.257Z] ERROR: Failed to insert harbor: Jurmo (en)
+[object Object]
+[2025-05-16T11:14:03.258Z] INFO: Processing 3 harbors for language: fi
+[2025-05-16T11:14:03.375Z] ERROR: Failed to insert harbor: Elisaari (fi)
+[object Object]
+[2025-05-16T11:14:03.468Z] ERROR: Failed to insert harbor: Örö (fi)
+[object Object]
+[2025-05-16T11:14:03.579Z] ERROR: Failed to insert harbor: Jurmo (fi)
+[object Object]
+[2025-05-16T11:14:03.579Z] INFO: Processing 3 harbors for language: sv
+[2025-05-16T11:14:03.662Z] ERROR: Failed to insert harbor: Elisaari (sv)
+[object Object]
+[2025-05-16T11:14:03.759Z] ERROR: Failed to insert harbor: Örö (sv)
+[object Object]
+[2025-05-16T11:14:03.885Z] ERROR: Failed to insert harbor: Jurmo (sv)
+[object Object]
+[2025-05-16T11:14:03.886Z] INFO: Finished seeding harbors
+[2025-05-16T11:14:03.886Z] INFO: Starting to seed trivia questions...
+[2025-05-16T11:14:03.887Z] INFO: Processing 3 trivia questions for language: en
+[2025-05-16T11:14:03.982Z] ERROR: Failed to insert trivia question #1 (en)
+[object Object]
+[2025-05-16T11:14:04.080Z] ERROR: Failed to insert trivia question #2 (en)
+[object Object]
+[2025-05-16T11:14:04.176Z] ERROR: Failed to insert trivia question #3 (en)
+[object Object]
+[2025-05-16T11:14:04.176Z] INFO: Processing 3 trivia questions for language: fi
+[2025-05-16T11:14:04.290Z] ERROR: Failed to insert trivia question #1 (fi)
+[object Object]
+[2025-05-16T11:14:04.388Z] ERROR: Failed to insert trivia question #2 (fi)
+[object Object]
+[2025-05-16T11:14:04.481Z] ERROR: Failed to insert trivia question #3 (fi)
+[object Object]
+[2025-05-16T11:14:04.481Z] INFO: Processing 3 trivia questions for language: sv
+[2025-05-16T11:14:04.574Z] ERROR: Failed to insert trivia question #1 (sv)
+[object Object]
+[2025-05-16T11:14:04.660Z] ERROR: Failed to insert trivia question #2 (sv)
+[object Object]
+[2025-05-16T11:14:04.744Z] ERROR: Failed to insert trivia question #3 (sv)
+[object Object]
+[2025-05-16T11:14:04.745Z] INFO: Finished seeding trivia questions
+[2025-05-16T11:14:04.746Z] INFO: Starting to seed achievements...
+[2025-05-16T11:14:04.746Z] INFO: Processing 5 achievements for language: en
+[2025-05-16T11:14:04.826Z] ERROR: Failed to insert achievement: First Steps (en)
+[object Object]
+[2025-05-16T11:14:04.906Z] ERROR: Failed to insert achievement: Trivia Master (en)
+[object Object]
+[2025-05-16T11:14:04.984Z] ERROR: Failed to insert achievement: Explorer (en)
+[object Object]
+[2025-05-16T11:14:05.064Z] ERROR: Failed to insert achievement: Polyglot (en)
+[object Object]
+[2025-05-16T11:14:05.137Z] ERROR: Failed to insert achievement: Perfect Navigator (en)
+[object Object]
+[2025-05-16T11:14:05.138Z] INFO: Processing 5 achievements for language: fi
+[2025-05-16T11:14:05.220Z] ERROR: Failed to insert achievement: Ensimmäiset askeleet (fi)
+[object Object]
+[2025-05-16T11:14:05.296Z] ERROR: Failed to insert achievement: Tietovisan mestari (fi)
+[object Object]
+[2025-05-16T11:14:05.371Z] ERROR: Failed to insert achievement: Tutkimusmatkailija (fi)
+[object Object]
+[2025-05-16T11:14:05.453Z] ERROR: Failed to insert achievement: Kielitaituri (fi)
+[object Object]
+[2025-05-16T11:14:05.526Z] ERROR: Failed to insert achievement: Täydellinen navigoija (fi)
+[object Object]
+[2025-05-16T11:14:05.527Z] INFO: Processing 5 achievements for language: sv
+[2025-05-16T11:14:05.603Z] ERROR: Failed to insert achievement: Första stegen (sv)
+[object Object]
+[2025-05-16T11:14:05.698Z] ERROR: Failed to insert achievement: Triviamästare (sv)
+[object Object]
+[2025-05-16T11:14:05.788Z] ERROR: Failed to insert achievement: Utforskare (sv)
+[object Object]
+[2025-05-16T11:14:05.863Z] ERROR: Failed to insert achievement: Polyglott (sv)
+[object Object]
+[2025-05-16T11:14:05.935Z] ERROR: Failed to insert achievement: Perfekt navigatör (sv)
+[object Object]
+[2025-05-16T11:14:05.935Z] INFO: Finished seeding achievements
+[2025-05-16T11:14:05.936Z] INFO: Database seeding completed successfully!
