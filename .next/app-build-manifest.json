@@ -17,10 +17,10 @@
       "static/css/app/location-game/page.css",
       "static/chunks/app/location-game/page.js"
     ],
-    "/trivia-game/page": [
+    "/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/trivia-game/page.js"
+      "static/chunks/app/page.js"
     ]
   }
 }

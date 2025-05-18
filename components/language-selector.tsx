@@ -1,47 +1,61 @@
 "use client"
 
-import { useLanguage } from "@/contexts/language-context"
-import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { getTranslation, type Language } from "@/lib/translations"
 
-const languages = [
-  { code: "en", name: "English", flag: "🇬🇧" },
-  { code: "fi", name: "Suomi", flag: "🇫🇮" },
-  { code: "sv", name: "Svenska", flag: "🇸🇪" },
-]
+interface LanguageContextType {
+  language: Language
+  setLanguage: (language: Language) => void
+  t: (key: string, params?: Record<string, string | number>) => string
+}
 
-export default function LanguageSelector() {
-  const { language, setLanguage } = useLanguage()
-  const [mounted, setMounted] = useState(false)
+// Create a default context value with a working t function
+const defaultContextValue: LanguageContextType = {
+  language: "fi",
+  setLanguage: () => {},
+  t: (key: string, params?: Record<string, string | number>) => {
+    // Simple fallback implementation
+    if (key === "home.title") return "Finnish Harbor Guesser"
+    if (key.startsWith("navigation.")) {
+      const navItem = key.split(".")[1]
+      return navItem.charAt(0).toUpperCase() + navItem.slice(1)
+    }
+    return key
+  },
+}
 
-  // Prevent hydration mismatch
+const LanguageContext = createContext<LanguageContextType>(defaultContextValue)
+
+export function LanguageProvider({ children }: { children: ReactNode }) {
+  // Default to Finnish
+  const [language, setLanguage] = useState<Language>("fi")
+
+  // Load saved language preference from localStorage
   useEffect(() => {
-    setMounted(true)
+    if (typeof window !== "undefined") {
+      const savedLanguage = localStorage.getItem("language") as Language
+      if (savedLanguage && ["en", "fi", "sv"].includes(savedLanguage)) {
+        setLanguage(savedLanguage)
+      }
+    }
   }, [])
 
-  if (!mounted) {
-    return null
+  // Save language preference to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("language", language)
+    }
+  }, [language])
+
+  // Translation function
+  const t = (key: string, params?: Record<string, string | number>) => {
+    return getTranslation(language, key, params)
   }
 
-  const currentLanguage = languages.find((lang) => lang.code === language) || languages[1] // Default to Finnish
+  return <LanguageContext.Provider value={{ language, setLanguage, t }}>{children}</LanguageContext.Provider>
+}
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="w-9 px-0">
-          <span className="text-lg">{currentLanguage.flag}</span>
-          <span className="sr-only">Select language</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {languages.map((lang) => (
-          <DropdownMenuItem key={lang.code} className="cursor-pointer" onClick={() => setLanguage(lang.code)}>
-            <span className="mr-2">{lang.flag}</span>
-            <span>{lang.name}</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+export function useLanguage() {
+  const context = useContext(LanguageContext)
+  return context
 }

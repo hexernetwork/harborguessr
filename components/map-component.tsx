@@ -23,6 +23,7 @@ export default function MapComponent({
   const searchMarkerRef = useRef(null)
   const [mapLoaded, setMapLoaded] = useState(false)
   const [mapStyle, setMapStyle] = useState("standard") // Default to standard style
+  const [showStyleDropdown, setShowStyleDropdown] = useState(false)
 
   // Finland's bounding box approximately
   const finlandBounds = [
@@ -30,71 +31,155 @@ export default function MapComponent({
     [70.1, 31.6], // Northeast corner
   ]
 
-  useEffect(() => {
-    // Import Leaflet dynamically (client-side only)
-    const loadMap = async () => {
-      try {
-        // Check if window is defined (client-side)
-        if (typeof window === "undefined") return
-
-        // Import Leaflet
-        const L = await import("leaflet")
-
-        // Make sure we only initialize the map once and the ref exists
-        if (mapInstanceRef.current || !mapRef.current) return
-
-        // Initialize the map with no default zoom controls
-        const map = L.map(mapRef.current, {
-          center: [64.0, 26.0], // Center of Finland
-          zoom: 5,
-          minZoom: 4,
-          maxZoom: 16,
-          attributionControl: false, // Hide default attribution control
-          zoomControl: false, // Hide default zoom controls
-        })
-
-        // Add standard OpenStreetMap tile layer
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "",
-        }).addTo(map)
-
-        // Add proper attribution that complies with OpenStreetMap requirements
-        const attributionControl = L.control.attribution({
-          position: "bottomright",
-          prefix: "",
-        })
-        attributionControl.addAttribution(
-          '<span class="map-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors</span>',
-        )
-        attributionControl.addTo(map)
-
-        // Add click handler to the map if setSelectedLocation is provided
-        if (setSelectedLocation) {
-          map.on("click", (e) => {
-            if (setSelectedLocation) {
-              setSelectedLocation({
-                lat: e.latlng.lat,
-                lng: e.latlng.lng,
-              })
-            }
-          })
-        }
-
-        // Store the map instance
-        mapInstanceRef.current = map
-
-        // Force a resize after a short delay to ensure the map renders correctly
-        setTimeout(() => {
-          map.invalidateSize()
-        }, 100)
-
-        setMapLoaded(true)
-      } catch (error) {
-        console.error("Error loading map:", error)
+  // Update the updateMapStyle function to include additional options for seamless tiles
+  const updateMapStyle = (map, L, style) => {
+    // Remove existing tile layers
+    map.eachLayer((layer) => {
+      if (layer instanceof L.TileLayer) {
+        map.removeLayer(layer)
       }
+    })
+
+    // Add new tile layer based on selected style
+    let tileLayer
+
+    // Common options to fix tile gaps
+    const tileOptions = {
+      attribution: "",
+      tileSize: 256,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
+      keepBuffer: 2,
+      edgeBufferTiles: 2,
+      noWrap: false,
+      className: "seamless-tiles", // Add a class for custom styling
     }
 
-    loadMap()
+    switch (style) {
+      case "satellite":
+        // ESRI World Imagery - reliable satellite imagery
+        tileLayer = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+          {
+            ...tileOptions,
+            maxZoom: 19,
+            maxNativeZoom: 18,
+          },
+        )
+        break
+
+      case "terrain":
+        // OpenTopoMap - shows terrain features
+        tileLayer = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+          ...tileOptions,
+          maxZoom: 17,
+          maxNativeZoom: 17,
+        })
+        break
+
+      case "standard":
+      default:
+        // Default OpenStreetMap
+        tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          ...tileOptions,
+          maxZoom: 19,
+          maxNativeZoom: 19,
+        })
+    }
+
+    tileLayer.addTo(map)
+
+    // Force a redraw of the map
+    setTimeout(() => {
+      map.invalidateSize()
+    }, 100)
+  }
+
+  // Update the loadMap function to include additional options for seamless tiles
+  const loadMap = async () => {
+    try {
+      // Check if window is defined (client-side)
+      if (typeof window === "undefined") return
+
+      // Import Leaflet
+      const L = await import("leaflet")
+
+      // Make sure we only initialize the map once and the ref exists
+      if (mapInstanceRef.current || !mapRef.current) return
+
+      // Initialize the map with no default zoom controls and additional options to fix tile gaps
+      const map = L.map(mapRef.current, {
+        center: [64.0, 26.0], // Center of Finland
+        zoom: 5,
+        minZoom: 4,
+        maxZoom: 16,
+        attributionControl: false, // Hide default attribution control
+        zoomControl: false, // Hide default zoom controls
+        renderer: L.canvas(), // Use canvas renderer for smoother tiles
+        fadeAnimation: true,
+        zoomAnimation: true,
+        zoomSnap: 0.5, // Allow fractional zoom levels for smoother transitions
+        wheelPxPerZoomLevel: 120, // Adjust mouse wheel sensitivity
+        preferCanvas: true, // Prefer canvas rendering for better performance
+      })
+
+      // Add standard OpenStreetMap tile layer with options to fix tile gaps
+      const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "",
+        maxZoom: 19,
+        maxNativeZoom: 19,
+        tileSize: 256,
+        updateWhenIdle: false,
+        updateWhenZooming: false,
+        keepBuffer: 2,
+        edgeBufferTiles: 2,
+        noWrap: false,
+        className: "seamless-tiles", // Add a class for custom styling
+      }).addTo(map)
+
+      // Add proper attribution that complies with OpenStreetMap requirements
+      const attributionControl = L.control.attribution({
+        position: "bottomright",
+        prefix: "",
+      })
+      attributionControl.addAttribution(
+        '<span class="map-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors</span>',
+      )
+      attributionControl.addTo(map)
+
+      // Add click handler to the map if setSelectedLocation is provided
+      if (setSelectedLocation) {
+        map.on("click", (e) => {
+          if (setSelectedLocation) {
+            setSelectedLocation({
+              lat: e.latlng.lat,
+              lng: e.latlng.lng,
+            })
+          }
+        })
+      }
+
+      // Store the map instance
+      mapInstanceRef.current = map
+
+      // Force a resize after a short delay to ensure the map renders correctly
+      setTimeout(() => {
+        map.invalidateSize()
+      }, 100)
+
+      setMapLoaded(true)
+    } catch (error) {
+      console.error("Error loading map:", error)
+    }
+  }
+
+  useEffect(() => {
+    // Import Leaflet dynamically (client-side only)
+    const loadMapWrapper = async () => {
+      await loadMap()
+    }
+
+    loadMapWrapper()
 
     // Cleanup function
     return () => {
@@ -105,39 +190,36 @@ export default function MapComponent({
     }
   }, [setSelectedLocation])
 
-  // Function to update map style
-  const updateMapStyle = (map, L, style) => {
-    // Remove existing tile layers
-    map.eachLayer((layer) => {
-      if (layer instanceof L.TileLayer) {
-        map.removeLayer(layer)
-      }
-    })
+  // Function to change map style
+  const changeMapStyle = (style) => {
+    setMapStyle(style)
 
-    // Add new tile layer based on selected style
-    switch (style) {
-      case "satellite":
-        // ESRI World Imagery - reliable satellite imagery
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-          attribution: "",
-        }).addTo(map)
-        break
-
-      case "terrain":
-        // OpenTopoMap - shows terrain features
-        L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
-          attribution: "",
-        }).addTo(map)
-        break
-
-      case "standard":
-      default:
-        // Default OpenStreetMap
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "",
-        }).addTo(map)
+    if (mapInstanceRef.current) {
+      import("leaflet")
+        .then((L) => {
+          updateMapStyle(mapInstanceRef.current, L, style)
+        })
+        .catch((error) => {
+          console.error("Error updating map style:", error)
+        })
     }
   }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (showStyleDropdown) {
+      const handleClickOutside = (event) => {
+        if (!event.target.closest(".map-style-dropdown")) {
+          setShowStyleDropdown(false)
+        }
+      }
+
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside)
+      }
+    }
+  }, [showStyleDropdown])
 
   // Handle map style changes
   useEffect(() => {
@@ -180,7 +262,7 @@ export default function MapComponent({
               <div class="relative">
                 <div class="absolute -top-3 -left-3 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center shadow-md border border-white">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
+                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
                     <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
                   </svg>
                 </div>
@@ -292,7 +374,7 @@ export default function MapComponent({
               <div class="relative">
                 <div class="absolute -top-5 -left-5 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
+                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
                     <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
                   </svg>
                 </div>
@@ -405,11 +487,6 @@ export default function MapComponent({
     updateSearchMarker()
   }, [searchedLocation, mapLoaded])
 
-  // Function to change map style
-  const changeMapStyle = (style) => {
-    setMapStyle(style)
-  }
-
   // Force map resize when window is resized
   useEffect(() => {
     const handleResize = () => {
@@ -424,6 +501,72 @@ export default function MapComponent({
       window.removeEventListener("resize", handleResize)
     }
   }, [])
+
+  // Update the CSS styles to fix tile gaps
+  const mapStyles = `
+    .map-attribution {
+      font-size: 10px !important;
+      opacity: 0.7 !important;
+      color: #333 !important;
+    }
+    .leaflet-control-attribution {
+      background: rgba(255,255,255,0.7) !important;
+      padding: 0 5px !important;
+      margin: 0 !important;
+      font-size: 10px !important;
+      color: #333 !important;
+    }
+    .leaflet-control-attribution a {
+      color: #0078A8 !important;
+      text-decoration: none !important;
+    }
+    .leaflet-control-attribution a:hover {
+      text-decoration: underline !important;
+    }
+    .leaflet-container {
+      height: 100%;
+      width: 100%;
+      background: #f8f8f8 !important;
+    }
+    .leaflet-tile-container {
+      will-change: transform;
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+    }
+    .leaflet-tile-container img {
+      width: 256px !important;
+      height: 256px !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+      transform: translateZ(0);
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+    }
+    .leaflet-tile-pane {
+      z-index: 0 !important;
+    }
+    .leaflet-tile {
+      filter: none !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .seamless-tiles {
+      margin: -1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+    }
+    /* Fix for tile gaps */
+    .leaflet-tile-loaded {
+      outline: none !important;
+      box-shadow: none !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+  `
 
   return (
     <div className="relative w-full h-[500px] bg-blue-50">
@@ -469,16 +612,19 @@ export default function MapComponent({
         </div>
 
         {/* Map style selector */}
-        <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg">
-          <div className="flex flex-col gap-2">
+        <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg map-style-dropdown">
+          <div className="relative">
             <button
-              className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md relative group"
+              className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md"
               aria-label="Change map style"
+              onClick={() => setShowStyleDropdown(!showStyleDropdown)}
             >
               <Layers className="h-4 w-4" />
+            </button>
 
-              {/* Dropdown for map styles */}
-              <div className="absolute right-full mr-2 top-0 hidden group-hover:block">
+            {/* Dropdown for map styles */}
+            {showStyleDropdown && (
+              <div className="absolute right-full mr-2 top-0">
                 <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 w-32">
                   <div className="flex flex-col gap-1">
                     <button
@@ -487,7 +633,10 @@ export default function MapComponent({
                           ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
                           : "hover:bg-slate-100 dark:hover:bg-slate-700"
                       }`}
-                      onClick={() => changeMapStyle("standard")}
+                      onClick={() => {
+                        changeMapStyle("standard")
+                        setShowStyleDropdown(false)
+                      }}
                     >
                       Standard
                     </button>
@@ -497,7 +646,10 @@ export default function MapComponent({
                           ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
                           : "hover:bg-slate-100 dark:hover:bg-slate-700"
                       }`}
-                      onClick={() => changeMapStyle("satellite")}
+                      onClick={() => {
+                        changeMapStyle("satellite")
+                        setShowStyleDropdown(false)
+                      }}
                     >
                       Satellite
                     </button>
@@ -507,44 +659,25 @@ export default function MapComponent({
                           ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
                           : "hover:bg-slate-100 dark:hover:bg-slate-700"
                       }`}
-                      onClick={() => changeMapStyle("terrain")}
+                      onClick={() => {
+                        changeMapStyle("terrain")
+                        setShowStyleDropdown(false)
+                      }}
                     >
                       Terrain
                     </button>
                   </div>
                 </div>
               </div>
-            </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Custom styling for map attribution */}
-      <style jsx global>{`
-        .map-attribution {
-          font-size: 10px !important;
-          opacity: 0.7 !important;
-          color: #333 !important;
-        }
-        .leaflet-control-attribution {
-          background: rgba(255,255,255,0.7) !important;
-          padding: 0 5px !important;
-          margin: 0 !important;
-          font-size: 10px !important;
-          color: #333 !important;
-        }
-        .leaflet-control-attribution a {
-          color: #0078A8 !important;
-          text-decoration: none !important;
-        }
-        .leaflet-control-attribution a:hover {
-          text-decoration: underline !important;
-        }
-        .leaflet-container {
-          height: 100%;
-          width: 100%;
-        }
-      `}</style>
+      {/* Custom styling for map */}
+      <style jsx global>
+        {mapStyles}
+      </style>
     </div>
   )
 }

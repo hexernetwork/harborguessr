@@ -12,16 +12,30 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import { useLanguage } from "@/contexts/language-context"
 
 export default function UserNav() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
 
+  // Update the UserNav component to handle the case when the language context is not available
+
+  // Replace the existing useLanguage hook usage with this safer implementation:
+  const languageContext = useLanguage()
+  const { t } = languageContext || {
+    t: (key) => {
+      if (key === "navigation.profile") return "Profile"
+      if (key === "navigation.settings") return "Settings"
+      if (key === "navigation.signOut") return "Sign Out"
+      return key
+    },
+  }
+
   // Get user data on component mount
-  useState(() => {
+  useEffect(() => {
     const getUser = async () => {
       try {
         const { data } = await supabase.auth.getSession()
@@ -33,7 +47,7 @@ export default function UserNav() {
       }
     }
     getUser()
-  })
+  }, [])
 
   const handleSignOut = async () => {
     try {
@@ -67,12 +81,12 @@ export default function UserNav() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem onClick={() => router.push("/profile")}>Profile</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/settings")}>Settings</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/profile")}>{t("navigation.profile")}</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/settings")}>{t("navigation.settings")}</DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} disabled={isLoading}>
-          {isLoading ? "Signing out..." : "Sign out"}
+          {isLoading ? "Signing out..." : t("navigation.signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
