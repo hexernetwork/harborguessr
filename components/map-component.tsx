@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Anchor, Layers } from "lucide-react"
 import "leaflet/dist/leaflet.css" // Import Leaflet CSS
+import { useLanguage } from "@/contexts/language-context"
 
 // This component uses Leaflet.js with OpenStreetMap
 export default function MapComponent({
@@ -15,6 +16,7 @@ export default function MapComponent({
   harborData = [],
   searchedLocation = null,
 }) {
+  const { t } = useLanguage() || { t: (key) => key }
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const markerRef = useRef(null)
@@ -31,7 +33,33 @@ export default function MapComponent({
     [70.1, 31.6], // Northeast corner
   ]
 
-  // Update the updateMapStyle function to include additional options for seamless tiles
+  // Get map background color based on style
+  const getMapBackgroundColor = (style) => {
+    switch (style) {
+      case "satellite":
+        return "#000000" // Black for satellite
+      case "terrain":
+        return "#d8e8ef" // Light blue for terrain
+      case "standard":
+      default:
+        return "#f2f2f2" // Light gray for standard
+    }
+  }
+
+  // Get tile URL based on style
+  const getTileUrl = (style) => {
+    switch (style) {
+      case "satellite":
+        return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+      case "terrain":
+        return "https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}.jpg"
+      case "standard":
+      default:
+        return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    }
+  }
+
+  // Update map style
   const updateMapStyle = (map, L, style) => {
     // Remove existing tile layers
     map.eachLayer((layer) => {
@@ -40,62 +68,20 @@ export default function MapComponent({
       }
     })
 
+    // Update the map background color to match the tiles
+    if (mapRef.current) {
+      mapRef.current.style.backgroundColor = getMapBackgroundColor(style)
+    }
+
     // Add new tile layer based on selected style
-    let tileLayer
-
-    // Common options to fix tile gaps
-    const tileOptions = {
-      attribution: "",
-      tileSize: 256,
-      updateWhenIdle: false,
-      updateWhenZooming: false,
-      keepBuffer: 2,
-      edgeBufferTiles: 2,
-      noWrap: false,
-      className: "seamless-tiles", // Add a class for custom styling
-    }
-
-    switch (style) {
-      case "satellite":
-        // ESRI World Imagery - reliable satellite imagery
-        tileLayer = L.tileLayer(
-          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          {
-            ...tileOptions,
-            maxZoom: 19,
-            maxNativeZoom: 18,
-          },
-        )
-        break
-
-      case "terrain":
-        // OpenTopoMap - shows terrain features
-        tileLayer = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
-          ...tileOptions,
-          maxZoom: 17,
-          maxNativeZoom: 17,
-        })
-        break
-
-      case "standard":
-      default:
-        // Default OpenStreetMap
-        tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          ...tileOptions,
-          maxZoom: 19,
-          maxNativeZoom: 19,
-        })
-    }
-
-    tileLayer.addTo(map)
-
-    // Force a redraw of the map
-    setTimeout(() => {
-      map.invalidateSize()
-    }, 100)
+    const tileUrl = getTileUrl(style)
+    L.tileLayer(tileUrl, {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map)
   }
 
-  // Update the loadMap function to include additional options for seamless tiles
+  // Load map
   const loadMap = async () => {
     try {
       // Check if window is defined (client-side)
@@ -107,45 +93,24 @@ export default function MapComponent({
       // Make sure we only initialize the map once and the ref exists
       if (mapInstanceRef.current || !mapRef.current) return
 
-      // Initialize the map with no default zoom controls and additional options to fix tile gaps
+      // Set initial background color
+      if (mapRef.current) {
+        mapRef.current.style.backgroundColor = getMapBackgroundColor(mapStyle)
+      }
+
+      // Initialize the map
       const map = L.map(mapRef.current, {
         center: [64.0, 26.0], // Center of Finland
         zoom: 5,
-        minZoom: 4,
-        maxZoom: 16,
-        attributionControl: false, // Hide default attribution control
         zoomControl: false, // Hide default zoom controls
-        renderer: L.canvas(), // Use canvas renderer for smoother tiles
-        fadeAnimation: true,
-        zoomAnimation: true,
-        zoomSnap: 0.5, // Allow fractional zoom levels for smoother transitions
-        wheelPxPerZoomLevel: 120, // Adjust mouse wheel sensitivity
-        preferCanvas: true, // Prefer canvas rendering for better performance
       })
 
-      // Add standard OpenStreetMap tile layer with options to fix tile gaps
-      const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "",
+      // Add tile layer
+      const tileUrl = getTileUrl(mapStyle)
+      L.tileLayer(tileUrl, {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
-        maxNativeZoom: 19,
-        tileSize: 256,
-        updateWhenIdle: false,
-        updateWhenZooming: false,
-        keepBuffer: 2,
-        edgeBufferTiles: 2,
-        noWrap: false,
-        className: "seamless-tiles", // Add a class for custom styling
       }).addTo(map)
-
-      // Add proper attribution that complies with OpenStreetMap requirements
-      const attributionControl = L.control.attribution({
-        position: "bottomright",
-        prefix: "",
-      })
-      attributionControl.addAttribution(
-        '<span class="map-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors</span>',
-      )
-      attributionControl.addTo(map)
 
       // Add click handler to the map if setSelectedLocation is provided
       if (setSelectedLocation) {
@@ -161,11 +126,6 @@ export default function MapComponent({
 
       // Store the map instance
       mapInstanceRef.current = map
-
-      // Force a resize after a short delay to ensure the map renders correctly
-      setTimeout(() => {
-        map.invalidateSize()
-      }, 100)
 
       setMapLoaded(true)
     } catch (error) {
@@ -267,7 +227,7 @@ export default function MapComponent({
                   </svg>
                 </div>
                 <div class="absolute -top-9 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
-                  ${harbor.name || "Unknown Harbor"}
+                  ${harbor.name || t("map.unknownHarbor")}
                 </div>
               </div>
             `,
@@ -283,9 +243,9 @@ export default function MapComponent({
           // Add popup with harbor info
           marker.bindPopup(`
             <div class="p-2">
-              <h3 class="font-bold">${harbor.name || "Unknown Harbor"}</h3>
-              <p class="text-xs mt-1">${harbor.region || "Unknown Region"}</p>
-              <p class="text-xs mt-1">${(harbor.type || []).join(", ") || "Unknown Type"}</p>
+              <h3 class="font-bold">${harbor.name || t("map.unknownHarbor")}</h3>
+              <p class="text-xs mt-1">${harbor.region || t("map.unknownRegion")}</p>
+              <p class="text-xs mt-1">${(harbor.type || []).join(", ") || t("map.unknownType")}</p>
             </div>
           `)
 
@@ -303,7 +263,7 @@ export default function MapComponent({
       harborMarkersRef.current.forEach((marker) => marker.remove())
       harborMarkersRef.current = []
     }
-  }, [mapLoaded, showHarborNames, harborData])
+  }, [mapLoaded, showHarborNames, harborData, t])
 
   // Handle selected location changes
   useEffect(() => {
@@ -333,6 +293,9 @@ export default function MapComponent({
                   </svg>
                 </div>
                 <div class="absolute -top-4 -left-4 w-8 h-8 bg-red-500 rounded-full animate-ping opacity-50"></div>
+                <div class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
+                  ${t("locationGame.yourGuess")}
+                </div>
               </div>
             `,
             className: "",
@@ -350,7 +313,7 @@ export default function MapComponent({
     }
 
     updateSelectedMarker()
-  }, [selectedLocation, mapLoaded])
+  }, [selectedLocation, mapLoaded, t])
 
   // Handle actual location changes
   useEffect(() => {
@@ -379,7 +342,7 @@ export default function MapComponent({
                   </svg>
                 </div>
                 <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap shadow-lg">
-                  ${harborName || "Harbor"}
+                  ${harborName || t("locationGame.actualLocation")}
                 </div>
               </div>
             `,
@@ -419,7 +382,7 @@ export default function MapComponent({
     }
 
     updateActualMarker()
-  }, [actualLocation, selectedLocation, harborName, mapLoaded])
+  }, [actualLocation, selectedLocation, harborName, mapLoaded, t])
 
   // Handle searched location changes
   useEffect(() => {
@@ -449,7 +412,7 @@ export default function MapComponent({
                 </svg>
               </div>
               <div class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-purple-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
-                ${searchedLocation.name || "Searched Location"}
+                ${searchedLocation.name || t("map.searchedLocation")}
               </div>
             </div>
           `,
@@ -467,7 +430,7 @@ export default function MapComponent({
           .bindPopup(`
           <div class="p-2">
             <h3 class="font-bold">${searchedLocation.name}</h3>
-            <p class="text-xs mt-1">Searched Location</p>
+            <p class="text-xs mt-1">${t("map.searchedLocation")}</p>
           </div>
         `)
           .openPopup()
@@ -485,7 +448,7 @@ export default function MapComponent({
     }
 
     updateSearchMarker()
-  }, [searchedLocation, mapLoaded])
+  }, [searchedLocation, mapLoaded, t])
 
   // Force map resize when window is resized
   useEffect(() => {
@@ -502,72 +465,6 @@ export default function MapComponent({
     }
   }, [])
 
-  // Update the CSS styles to fix tile gaps
-  const mapStyles = `
-    .map-attribution {
-      font-size: 10px !important;
-      opacity: 0.7 !important;
-      color: #333 !important;
-    }
-    .leaflet-control-attribution {
-      background: rgba(255,255,255,0.7) !important;
-      padding: 0 5px !important;
-      margin: 0 !important;
-      font-size: 10px !important;
-      color: #333 !important;
-    }
-    .leaflet-control-attribution a {
-      color: #0078A8 !important;
-      text-decoration: none !important;
-    }
-    .leaflet-control-attribution a:hover {
-      text-decoration: underline !important;
-    }
-    .leaflet-container {
-      height: 100%;
-      width: 100%;
-      background: #f8f8f8 !important;
-    }
-    .leaflet-tile-container {
-      will-change: transform;
-      transform-style: preserve-3d;
-      backface-visibility: hidden;
-    }
-    .leaflet-tile-container img {
-      width: 256px !important;
-      height: 256px !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      border: none !important;
-      box-shadow: none !important;
-      transform: translateZ(0);
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
-    }
-    .leaflet-tile-pane {
-      z-index: 0 !important;
-    }
-    .leaflet-tile {
-      filter: none !important;
-      border: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-    .seamless-tiles {
-      margin: -1px !important;
-      padding: 0 !important;
-      border: 0 !important;
-    }
-    /* Fix for tile gaps */
-    .leaflet-tile-loaded {
-      outline: none !important;
-      box-shadow: none !important;
-      border: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-  `
-
   return (
     <div className="relative w-full h-[500px] bg-blue-50">
       <div ref={mapRef} className="w-full h-full z-10"></div>
@@ -576,9 +473,7 @@ export default function MapComponent({
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/90 dark:bg-slate-800/90 p-3 rounded-lg text-center z-20 shadow-lg">
           <div className="flex items-center gap-2">
             <Anchor className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            <p className="text-slate-800 dark:text-white text-sm font-medium">
-              Click on the map to guess the harbor location
-            </p>
+            <p className="text-slate-800 dark:text-white text-sm font-medium">{t("map.clickToSelect")}</p>
           </div>
         </div>
       )}
@@ -586,7 +481,7 @@ export default function MapComponent({
       {selectedLocation && !actualLocation && (
         <div className="absolute bottom-4 right-4 z-20">
           <div className="bg-blue-600 text-white text-xs font-medium py-1.5 px-3 rounded-full shadow-md">
-            Location Selected
+            {t("map.locationSelected")}
           </div>
         </div>
       )}
@@ -599,12 +494,14 @@ export default function MapComponent({
             <button
               className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md"
               onClick={() => mapInstanceRef.current?.zoomIn()}
+              aria-label={t("map.zoomIn")}
             >
               <span className="text-xl font-bold">+</span>
             </button>
             <button
               className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md"
               onClick={() => mapInstanceRef.current?.zoomOut()}
+              aria-label={t("map.zoomOut")}
             >
               <span className="text-xl font-bold">-</span>
             </button>
@@ -616,7 +513,7 @@ export default function MapComponent({
           <div className="relative">
             <button
               className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md"
-              aria-label="Change map style"
+              aria-label={t("map.changeMapStyle")}
               onClick={() => setShowStyleDropdown(!showStyleDropdown)}
             >
               <Layers className="h-4 w-4" />
@@ -638,7 +535,7 @@ export default function MapComponent({
                         setShowStyleDropdown(false)
                       }}
                     >
-                      Standard
+                      {t("map.standard")}
                     </button>
                     <button
                       className={`text-xs text-left px-2 py-1.5 rounded ${
@@ -651,7 +548,7 @@ export default function MapComponent({
                         setShowStyleDropdown(false)
                       }}
                     >
-                      Satellite
+                      {t("map.satellite")}
                     </button>
                     <button
                       className={`text-xs text-left px-2 py-1.5 rounded ${
@@ -664,7 +561,7 @@ export default function MapComponent({
                         setShowStyleDropdown(false)
                       }}
                     >
-                      Terrain
+                      {t("map.terrain")}
                     </button>
                   </div>
                 </div>
@@ -673,11 +570,6 @@ export default function MapComponent({
           </div>
         </div>
       </div>
-
-      {/* Custom styling for map */}
-      <style jsx global>
-        {mapStyles}
-      </style>
     </div>
   )
 }

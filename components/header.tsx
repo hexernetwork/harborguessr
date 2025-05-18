@@ -34,6 +34,7 @@ export default function Header() {
     if (key === "navigation.signIn") return "Sign In"
     if (key === "common.back") return "Back"
     if (key === "settings.language") return "Language"
+    if (key === "navigation.toggleMenu") return "Toggle menu"
 
     // Return the key as a last resort
     return key
@@ -109,35 +110,43 @@ export default function Header() {
       <div className="container flex h-16 items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <Link href="/" className="flex items-center gap-2">
-            <Anchor className="h-6 w-6 text-blue-600" />
-            <span className="text-xl font-bold">{t("home.title")}</span>
+            <Anchor className="h-6 w-6 text-blue-600 shrink-0" />
+            <span className="text-xl font-bold truncate max-w-[180px] sm:max-w-none">{t("home.title")}</span>
           </Link>
         </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-6">
+        <nav className="hidden md:flex items-center gap-4 lg:gap-6">
           <Link href="/location-game">
-            <Button variant="ghost">{t("navigation.locationGame")}</Button>
+            <Button variant="ghost" className="text-sm lg:text-base">
+              {t("navigation.locationGame")}
+            </Button>
           </Link>
           <Link href="/trivia-game">
-            <Button variant="ghost">{t("navigation.triviaGame")}</Button>
+            <Button variant="ghost" className="text-sm lg:text-base">
+              {t("navigation.triviaGame")}
+            </Button>
           </Link>
           <Link href="/about">
-            <Button variant="ghost">{t("navigation.about")}</Button>
+            <Button variant="ghost" className="text-sm lg:text-base">
+              {t("navigation.about")}
+            </Button>
           </Link>
           <Link href="/how-to-play">
-            <Button variant="ghost">{t("navigation.howToPlay")}</Button>
+            <Button variant="ghost" className="text-sm lg:text-base">
+              {t("navigation.howToPlay")}
+            </Button>
           </Link>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {renderInlineLanguageSelector()}
           <ThemeToggle />
           {isClient && isLoggedIn ? (
             <UserNav />
           ) : (
             <Link href="/auth/login">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="hidden sm:flex">
                 {t("navigation.signIn")}
               </Button>
             </Link>
@@ -146,9 +155,9 @@ export default function Header() {
           {/* Mobile Menu */}
           <Sheet>
             <SheetTrigger asChild className="md:hidden">
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" aria-label={t("navigation.toggleMenu")}>
                 <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle menu</span>
+                <span className="sr-only">{t("navigation.toggleMenu")}</span>
               </Button>
             </SheetTrigger>
             <SheetContent side="right">
@@ -173,6 +182,13 @@ export default function Header() {
                     {t("navigation.howToPlay")}
                   </Button>
                 </Link>
+                {!isLoggedIn && (
+                  <Link href="/auth/login">
+                    <Button variant="outline" className="w-full justify-start">
+                      {t("navigation.signIn")}
+                    </Button>
+                  </Link>
+                )}
               </nav>
             </SheetContent>
           </Sheet>

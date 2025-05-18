@@ -371,7 +371,7 @@ export default function LocationGameContent() {
                       <EyeOff className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                     )}
                     <Label htmlFor="harbor-names" className="text-sm font-medium">
-                      {t("locationGame.showHarborNames")}
+                      {t("map.showHarborNames")}
                     </Label>
                   </div>
                   <Switch id="harbor-names" checked={showHarborNames} onCheckedChange={toggleHarborNames} />
@@ -383,7 +383,7 @@ export default function LocationGameContent() {
                     <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <Input
                       type="text"
-                      placeholder={t("locationGame.searchHarbor")}
+                      placeholder={t("map.searchHarbor")}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-8"
@@ -402,7 +402,7 @@ export default function LocationGameContent() {
                       {t("locationGame.guessesRemaining")}: {5 - guessCount}
                     </p>
                     <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                      {selectedLocation ? t("locationGame.locationSelected") : t("locationGame.clickToSelect")}
+                      {selectedLocation ? t("map.locationSelected") : t("map.clickToSelect")}
                     </div>
                   </div>
                   <Button
@@ -442,7 +442,7 @@ export default function LocationGameContent() {
                       ))
                     ) : (
                       <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs py-1 px-2 rounded-full">
-                        Harbor
+                        {t("locationGame.harbor")}
                       </div>
                     )}
                   </div>
