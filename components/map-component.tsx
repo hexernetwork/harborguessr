@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Anchor, Layers } from 'lucide-react'
+import { Anchor, Layers } from "lucide-react"
+import "leaflet/dist/leaflet.css" // Import Leaflet CSS
 
 // This component uses Leaflet.js with OpenStreetMap
 export default function MapComponent({
@@ -21,7 +22,7 @@ export default function MapComponent({
   const harborMarkersRef = useRef([])
   const searchMarkerRef = useRef(null)
   const [mapLoaded, setMapLoaded] = useState(false)
-  const [mapStyle, setMapStyle] = "standard") // Default to standard style
+  const [mapStyle, setMapStyle] = useState("standard") // Default to standard style
 
   // Finland's bounding box approximately
   const finlandBounds = [
@@ -33,10 +34,14 @@ export default function MapComponent({
     // Import Leaflet dynamically (client-side only)
     const loadMap = async () => {
       try {
+        // Check if window is defined (client-side)
+        if (typeof window === "undefined") return
+
+        // Import Leaflet
         const L = await import("leaflet")
 
-        // Make sure we only initialize the map once
-        if (mapInstanceRef.current) return
+        // Make sure we only initialize the map once and the ref exists
+        if (mapInstanceRef.current || !mapRef.current) return
 
         // Initialize the map with no default zoom controls
         const map = L.map(mapRef.current, {
@@ -53,24 +58,35 @@ export default function MapComponent({
           attribution: "",
         }).addTo(map)
 
-        // Add extremely minimal attribution in a very subtle way
+        // Add proper attribution that complies with OpenStreetMap requirements
         const attributionControl = L.control.attribution({
           position: "bottomright",
           prefix: "",
         })
-        attributionControl.addAttribution('<span class="map-attribution">© OSM</span>')
+        attributionControl.addAttribution(
+          '<span class="map-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors</span>',
+        )
         attributionControl.addTo(map)
 
-        // Add click handler for map
-        map.on("click", (e) => {
-          if (setSelectedLocation) {
-            const { lat, lng } = e.latlng
-            setSelectedLocation({ lat, lng })
-          }
-        })
+        // Add click handler to the map if setSelectedLocation is provided
+        if (setSelectedLocation) {
+          map.on("click", (e) => {
+            if (setSelectedLocation) {
+              setSelectedLocation({
+                lat: e.latlng.lat,
+                lng: e.latlng.lng,
+              })
+            }
+          })
+        }
 
         // Store the map instance
         mapInstanceRef.current = map
+
+        // Force a resize after a short delay to ensure the map renders correctly
+        setTimeout(() => {
+          map.invalidateSize()
+        }, 100)
 
         setMapLoaded(true)
       } catch (error) {
@@ -87,7 +103,7 @@ export default function MapComponent({
         mapInstanceRef.current = null
       }
     }
-  }, [])
+  }, [setSelectedLocation])
 
   // Function to update map style
   const updateMapStyle = (map, L, style) => {
@@ -102,12 +118,9 @@ export default function MapComponent({
     switch (style) {
       case "satellite":
         // ESRI World Imagery - reliable satellite imagery
-        L.tileLayer(
-          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          {
-            attribution: "",
-          }
-        ).addTo(map)
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+          attribution: "",
+        }).addTo(map)
         break
 
       case "terrain":
@@ -144,7 +157,7 @@ export default function MapComponent({
 
   // Handle harbor data to show names on the map
   useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current || !showHarborNames || harborData.length === 0) return
+    if (!mapLoaded || !mapInstanceRef.current || !showHarborNames || !harborData || harborData.length === 0) return
 
     const loadHarborMarkers = async () => {
       try {
@@ -156,6 +169,11 @@ export default function MapComponent({
 
         // Add markers for all harbors with names
         harborData.forEach((harbor) => {
+          if (!harbor || !harbor.coordinates || !harbor.coordinates.lat || !harbor.coordinates.lng) {
+            console.warn("Invalid harbor data:", harbor)
+            return
+          }
+
           // Create a custom icon for harbor markers
           const harborIcon = L.divIcon({
             html: `
@@ -167,7 +185,7 @@ export default function MapComponent({
                   </svg>
                 </div>
                 <div class="absolute -top-9 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
-                  ${harbor.name}
+                  ${harbor.name || "Unknown Harbor"}
                 </div>
               </div>
             `,
@@ -183,9 +201,9 @@ export default function MapComponent({
           // Add popup with harbor info
           marker.bindPopup(`
             <div class="p-2">
-              <h3 class="font-bold">${harbor.name}</h3>
-              <p class="text-xs mt-1">${harbor.region}</p>
-              <p class="text-xs mt-1">${harbor.type.join(", ")}</p>
+              <h3 class="font-bold">${harbor.name || "Unknown Harbor"}</h3>
+              <p class="text-xs mt-1">${harbor.region || "Unknown Region"}</p>
+              <p class="text-xs mt-1">${(harbor.type || []).join(", ") || "Unknown Type"}</p>
             </div>
           `)
 
@@ -392,6 +410,21 @@ export default function MapComponent({
     setMapStyle(style)
   }
 
+  // Force map resize when window is resized
+  useEffect(() => {
+    const handleResize = () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize()
+      }
+    }
+
+    window.addEventListener("resize", handleResize)
+
+    return () => {
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [])
+
   return (
     <div className="relative w-full h-[500px] bg-blue-50">
       <div ref={mapRef} className="w-full h-full z-10"></div>
@@ -489,20 +522,27 @@ export default function MapComponent({
       {/* Custom styling for map attribution */}
       <style jsx global>{`
         .map-attribution {
-          font-size: 6px !important;
-          opacity: 0.15 !important;
-          color: #888 !important;
+          font-size: 10px !important;
+          opacity: 0.7 !important;
+          color: #333 !important;
         }
         .leaflet-control-attribution {
-          background: transparent !important;
-          padding: 0 2px !important;
+          background: rgba(255,255,255,0.7) !important;
+          padding: 0 5px !important;
           margin: 0 !important;
-          font-size: 6px !important;
-          color: rgba(0,0,0,0.15) !important;
+          font-size: 10px !important;
+          color: #333 !important;
         }
         .leaflet-control-attribution a {
-          color: rgba(0,0,0,0.15) !important;
+          color: #0078A8 !important;
           text-decoration: none !important;
+        }
+        .leaflet-control-attribution a:hover {
+          text-decoration: underline !important;
+        }
+        .leaflet-container {
+          height: 100%;
+          width: 100%;
         }
       `}</style>
     </div>

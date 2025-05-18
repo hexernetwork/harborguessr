@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { fetchHarborTrivia } from "@/lib/data"
+import { fetchRandomTriviaQuestions } from "@/lib/data"
 import ScoreDisplay from "@/components/score-display"
 import { useLanguage } from "@/contexts/language-context"
+import { useAuth } from "@/contexts/auth-context"
+import { saveQuestionAnswer, saveTriviaGameScore } from "@/lib/data"
 
 export default function TriviaGame() {
   const [questions, setQuestions] = useState([])
@@ -20,15 +22,50 @@ export default function TriviaGame() {
   const [isAnswered, setIsAnswered] = useState(false)
   const [timeLeft, setTimeLeft] = useState(15)
   const [timerActive, setTimerActive] = useState(false)
+  const [correctAnswers, setCorrectAnswers] = useState(0)
+  const [gameId, setGameId] = useState(null)
+  const [error, setError] = useState(null)
 
   const { language } = useLanguage()
+  const auth = useAuth()
+  const user = auth?.user || null
 
   useEffect(() => {
+    // Generate a unique game ID for this session
+    setGameId(Date.now().toString())
+
     async function loadData() {
-      const data = await fetchHarborTrivia(language)
-      setQuestions(data)
-      setLoading(false)
-      setTimerActive(true)
+      try {
+        setLoading(true)
+        // Fetch 5 random trivia questions based on view count
+        const data = await fetchRandomTriviaQuestions(language, 5)
+
+        if (!data || data.length === 0) {
+          setError("No trivia questions found. Please try again later.")
+          setLoading(false)
+          return
+        }
+
+        // Validate that each question has the required fields
+        const validQuestions = data.filter(
+          (q) =>
+            q && q.question && q.answers && Array.isArray(q.answers) && q.correctAnswer !== undefined && q.language,
+        )
+
+        if (validQuestions.length === 0) {
+          setError("Invalid trivia questions data. Please try again later.")
+          setLoading(false)
+          return
+        }
+
+        setQuestions(validQuestions)
+        setLoading(false)
+        setTimerActive(true)
+      } catch (error) {
+        console.error("Error loading trivia questions:", error)
+        setError("Failed to load trivia questions. Please try again later.")
+        setLoading(false)
+      }
     }
 
     loadData()
@@ -47,18 +84,40 @@ export default function TriviaGame() {
     return () => clearTimeout(timer)
   }, [timeLeft, timerActive, isAnswered])
 
-  const handleAnswer = (answerIndex) => {
+  const handleAnswer = async (answerIndex) => {
     setSelectedAnswer(answerIndex)
     setIsAnswered(true)
     setTimerActive(false)
 
     const currentQuestion = questions[currentQuestionIndex]
+    if (!currentQuestion) return
 
-    if (answerIndex === currentQuestion.correctAnswer) {
-      // Calculate score based on time left
-      const timeBonus = Math.round((timeLeft / 15) * 50)
-      const questionScore = 50 + timeBonus
+    const isCorrect = answerIndex === currentQuestion.correctAnswer
+
+    // Calculate score based on time left
+    const timeBonus = Math.round((timeLeft / 15) * 50)
+    const questionScore = isCorrect ? 50 + timeBonus : 0
+
+    if (isCorrect) {
       setScore((prevScore) => prevScore + questionScore)
+      setCorrectAnswers((prev) => prev + 1)
+    }
+
+    // Save the answer to Supabase if user is logged in
+    if (user) {
+      try {
+        await saveQuestionAnswer(
+          user.id,
+          currentQuestion.id,
+          language,
+          answerIndex,
+          isCorrect,
+          15 - timeLeft, // Time taken in seconds
+          questionScore,
+        )
+      } catch (error) {
+        console.error("Error saving question answer:", error)
+      }
     }
   }
 
@@ -70,19 +129,48 @@ export default function TriviaGame() {
       setTimeLeft(15)
       setTimerActive(true)
     } else {
-      // Game over - would show final score and restart option
+      // Game over - save final score if user is logged in
+      if (user) {
+        try {
+          saveTriviaGameScore(user.id, score, questions.length, correctAnswers, language)
+        } catch (error) {
+          console.error("Error saving game score:", error)
+        }
+      }
+
+      // Show final score
       alert(`Game Over! Final Score: ${score}`)
       resetGame()
     }
   }
 
-  const resetGame = () => {
+  const resetGame = async () => {
+    setLoading(true)
     setCurrentQuestionIndex(0)
     setScore(0)
     setSelectedAnswer(null)
     setIsAnswered(false)
     setTimeLeft(15)
-    setTimerActive(true)
+    setCorrectAnswers(0)
+    setGameId(Date.now().toString())
+    setError(null)
+
+    try {
+      // Fetch new random questions
+      const data = await fetchRandomTriviaQuestions(language, 5)
+      if (!data || data.length === 0) {
+        setError("No trivia questions found. Please try again later.")
+        setLoading(false)
+        return
+      }
+      setQuestions(data)
+      setLoading(false)
+      setTimerActive(true)
+    } catch (error) {
+      console.error("Error loading trivia questions:", error)
+      setError("Failed to load trivia questions. Please try again later.")
+      setLoading(false)
+    }
   }
 
   if (loading) {
@@ -91,6 +179,46 @@ export default function TriviaGame() {
         <div className="text-center">
           <RefreshCw className="h-10 w-10 mx-auto animate-spin text-teal-600 dark:text-teal-400" />
           <p className="mt-4 text-slate-600 dark:text-slate-400">Loading trivia questions...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="text-center max-w-md p-6 bg-white dark:bg-slate-800 rounded-lg shadow-lg">
+          <h2 className="text-xl font-bold mb-4 text-red-600 dark:text-red-400">Error</h2>
+          <p className="mb-6 text-slate-600 dark:text-slate-400">{error}</p>
+          <Button onClick={resetGame} className="bg-teal-600 hover:bg-teal-700 text-white">
+            Try Again
+          </Button>
+          <Link href="/" className="block mt-4">
+            <Button variant="outline" className="w-full">
+              Return to Home
+            </Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (!questions.length || !questions[currentQuestionIndex]) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="text-center max-w-md p-6 bg-white dark:bg-slate-800 rounded-lg shadow-lg">
+          <h2 className="text-xl font-bold mb-4 text-amber-600 dark:text-amber-400">No Questions Available</h2>
+          <p className="mb-6 text-slate-600 dark:text-slate-400">
+            No trivia questions are currently available. Please try again later.
+          </p>
+          <Button onClick={resetGame} className="bg-teal-600 hover:bg-teal-700 text-white">
+            Try Again
+          </Button>
+          <Link href="/" className="block mt-4">
+            <Button variant="outline" className="w-full">
+              Return to Home
+            </Button>
+          </Link>
         </div>
       </div>
     )
@@ -145,37 +273,38 @@ export default function TriviaGame() {
                 )}
 
                 <div className="space-y-3">
-                  {currentQuestion.answers.map((answer, index) => (
-                    <Button
-                      key={index}
-                      variant={
-                        isAnswered
-                          ? index === currentQuestion.correctAnswer
-                            ? "success"
-                            : index === selectedAnswer && index !== currentQuestion.correctAnswer
-                              ? "destructive"
-                              : "outline"
-                          : "outline"
-                      }
-                      className={`w-full justify-start text-left h-auto py-3 px-4 ${
-                        isAnswered && index !== selectedAnswer && index !== currentQuestion.correctAnswer
-                          ? "opacity-60"
-                          : ""
-                      }`}
-                      onClick={() => !isAnswered && handleAnswer(index)}
-                      disabled={isAnswered}
-                    >
-                      <div className="flex items-center w-full">
-                        <span className="flex-1">{answer}</span>
-                        {isAnswered && index === currentQuestion.correctAnswer && (
-                          <Check className="h-5 w-5 text-green-500 ml-2" />
-                        )}
-                        {isAnswered && index === selectedAnswer && index !== currentQuestion.correctAnswer && (
-                          <X className="h-5 w-5 text-red-500 ml-2" />
-                        )}
-                      </div>
-                    </Button>
-                  ))}
+                  {currentQuestion.answers &&
+                    currentQuestion.answers.map((answer, index) => (
+                      <Button
+                        key={index}
+                        variant={
+                          isAnswered
+                            ? index === currentQuestion.correctAnswer
+                              ? "success"
+                              : index === selectedAnswer && index !== currentQuestion.correctAnswer
+                                ? "destructive"
+                                : "outline"
+                            : "outline"
+                        }
+                        className={`w-full justify-start text-left h-auto py-3 px-4 ${
+                          isAnswered && index !== selectedAnswer && index !== currentQuestion.correctAnswer
+                            ? "opacity-60"
+                            : ""
+                        }`}
+                        onClick={() => !isAnswered && handleAnswer(index)}
+                        disabled={isAnswered}
+                      >
+                        <div className="flex items-center w-full">
+                          <span className="flex-1">{answer}</span>
+                          {isAnswered && index === currentQuestion.correctAnswer && (
+                            <Check className="h-5 w-5 text-green-500 ml-2" />
+                          )}
+                          {isAnswered && index === selectedAnswer && index !== currentQuestion.correctAnswer && (
+                            <X className="h-5 w-5 text-red-500 ml-2" />
+                          )}
+                        </div>
+                      </Button>
+                    ))}
                 </div>
               </div>
             </CardContent>
@@ -184,7 +313,7 @@ export default function TriviaGame() {
               <CardFooter className="border-t pt-4">
                 <div className="w-full">
                   <p className="text-sm mb-3 text-slate-600 dark:text-slate-400">{currentQuestion.explanation}</p>
-                  <Button onClick={nextQuestion} className="w-full bg-teal-600 hover:bg-teal-700">
+                  <Button onClick={nextQuestion} className="w-full bg-teal-600 hover:bg-teal-700 text-white">
                     {currentQuestionIndex < questions.length - 1 ? "Next Question" : "See Final Score"}
                   </Button>
                 </div>

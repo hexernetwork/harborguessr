@@ -8,6 +8,7 @@ import LanguageSelector from "@/components/language-selector"
 import UserNav from "@/components/user-nav"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase"
 
 export default function Header() {
   const [isClient, setIsClient] = useState(false)
@@ -18,8 +19,7 @@ export default function Header() {
     // Check if user is logged in
     const checkAuth = async () => {
       try {
-        const { createClient } = await import("@/lib/supabase")
-        const supabase = createClient()
+        // Use the exported supabase instance directly instead of createClient
         const { data } = await supabase.auth.getSession()
         setIsLoggedIn(!!data.session)
       } catch (error) {

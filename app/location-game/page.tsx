@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/contexts/language-context"
+import { updateHarborViewCount } from "@/lib/supabase-data"
 
 export default function LocationGame() {
   const [currentHarbor, setCurrentHarbor] = useState(null)
@@ -36,18 +37,49 @@ export default function LocationGame() {
 
   useEffect(() => {
     async function loadData() {
-      const data = await fetchHarborData(language)
-      setHarbors(data)
-      selectRandomHarbor(data)
-      setLoading(false)
+      try {
+        const data = await fetchHarborData(language)
+        if (data && data.length > 0) {
+          setHarbors(data)
+          selectRandomHarbor(data)
+        } else {
+          console.error("No harbor data returned")
+          setFeedback({
+            type: "error",
+            message: "Failed to load harbor data. Please try again later.",
+          })
+        }
+      } catch (error) {
+        console.error("Error loading harbor data:", error)
+        setFeedback({
+          type: "error",
+          message: "Failed to load harbor data. Please try again later.",
+        })
+      } finally {
+        setLoading(false)
+      }
     }
 
     loadData()
   }, [language])
 
   const selectRandomHarbor = (harborList) => {
+    if (!harborList || harborList.length === 0) {
+      console.error("No harbor data available")
+      return
+    }
+
     const randomIndex = Math.floor(Math.random() * harborList.length)
-    setCurrentHarbor(harborList[randomIndex])
+    const harbor = harborList[randomIndex]
+    setCurrentHarbor(harbor)
+
+    // Update the view count for this harbor
+    if (harbor && harbor.id) {
+      updateHarborViewCount(harbor.id, language)
+        .then(() => console.log(`Updated view count for harbor ${harbor.id}`))
+        .catch((error) => console.error("Error updating harbor view count:", error))
+    }
+
     setGuessCount(0)
     setGameOver(false)
     setFeedback(null)
@@ -58,7 +90,7 @@ export default function LocationGame() {
   }
 
   const handleGuess = () => {
-    if (!selectedLocation || !currentHarbor) return
+    if (!selectedLocation || !currentHarbor || !currentHarbor.coordinates) return
 
     // Calculate distance between selected point and actual harbor
     const actualLat = currentHarbor.coordinates.lat
@@ -273,7 +305,7 @@ export default function LocationGame() {
                 </div>
                 <Progress value={(currentHintIndex + 1) * 20} className="h-1 mb-3" />
                 <div className="space-y-2">
-                  {currentHarbor &&
+                  {currentHarbor && currentHarbor.hints && currentHarbor.hints.length > 0 ? (
                     currentHarbor.hints.map((hint, index) => (
                       <div
                         key={index}
@@ -289,7 +321,12 @@ export default function LocationGame() {
                           <p className="text-sm">Hint {index + 1} - Locked</p>
                         )}
                       </div>
-                    ))}
+                    ))
+                  ) : (
+                    <div className="p-2 rounded-md border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                      <p className="text-sm">No hints available for this harbor.</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -354,19 +391,27 @@ export default function LocationGame() {
                 </Button>
               )}
 
-              {gameOver && (
+              {gameOver && currentHarbor && (
                 <div className="mt-4 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
                   <h3 className="font-medium text-slate-800 dark:text-white mb-2">{currentHarbor.name}</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">{currentHarbor.description}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                    {currentHarbor.description || "No description available."}
+                  </p>
                   <div className="flex flex-wrap gap-2">
-                    {currentHarbor.type.map((type, index) => (
-                      <div
-                        key={index}
-                        className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs py-1 px-2 rounded-full"
-                      >
-                        {type}
+                    {currentHarbor.type && currentHarbor.type.map ? (
+                      currentHarbor.type.map((type, index) => (
+                        <div
+                          key={index}
+                          className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs py-1 px-2 rounded-full"
+                        >
+                          {type}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs py-1 px-2 rounded-full">
+                        Harbor
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
@@ -387,8 +432,8 @@ export default function LocationGame() {
             <MapComponent
               selectedLocation={selectedLocation}
               setSelectedLocation={!gameOver ? setSelectedLocation : null}
-              actualLocation={gameOver ? currentHarbor.coordinates : null}
-              harborName={gameOver ? currentHarbor.name : null}
+              actualLocation={gameOver && currentHarbor ? currentHarbor.coordinates : null}
+              harborName={gameOver && currentHarbor ? currentHarbor.name : null}
               showFinland={true}
               showHarborNames={showHarborNames}
               harborData={harbors}
