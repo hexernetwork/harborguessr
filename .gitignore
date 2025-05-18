@@ -6,3 +6,5 @@ out/
 *.log
 ales/
 .env.local
+.next
+next

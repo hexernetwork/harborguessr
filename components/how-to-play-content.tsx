@@ -39,9 +39,12 @@ export default function HowToPlayContent() {
                   <p>{t("howToPlay.locationGameDescription")}</p>
 
                   <ol className="list-decimal list-inside space-y-2">
-                    {t("howToPlay.locationGameSteps", { returnObjects: true })?.map((step, index) => (
+                    {(Array.isArray(t("howToPlay.locationGameSteps", { returnObjects: true }))
+                      ? t("howToPlay.locationGameSteps", { returnObjects: true })
+                      : []
+                    ).map((step, index) => (
                       <li key={index}>
-                        <span className="font-medium">{step.title}</span> - {step.description}
+                        <span className="font-medium">{step?.title || ""}</span> - {step?.description || ""}
                       </li>
                     ))}
                   </ol>
@@ -67,9 +70,12 @@ export default function HowToPlayContent() {
                   <p>{t("howToPlay.triviaGameDescription")}</p>
 
                   <ol className="list-decimal list-inside space-y-2">
-                    {t("howToPlay.triviaGameSteps", { returnObjects: true })?.map((step, index) => (
+                    {(Array.isArray(t("howToPlay.triviaGameSteps", { returnObjects: true }))
+                      ? t("howToPlay.triviaGameSteps", { returnObjects: true })
+                      : []
+                    ).map((step, index) => (
                       <li key={index}>
-                        <span className="font-medium">{step.title}</span> - {step.description}
+                        <span className="font-medium">{step?.title || ""}</span> - {step?.description || ""}
                       </li>
                     ))}
                   </ol>
@@ -91,8 +97,11 @@ export default function HowToPlayContent() {
                   {t("howToPlay.tipsTitle")}
                 </h2>
                 <ul className="list-disc list-inside space-y-2 text-slate-600 dark:text-slate-300">
-                  {t("howToPlay.tips", { returnObjects: true })?.map((tip, index) => (
-                    <li key={index}>{tip}</li>
+                  {(Array.isArray(t("howToPlay.tips", { returnObjects: true }))
+                    ? t("howToPlay.tips", { returnObjects: true })
+                    : []
+                  ).map((tip, index) => (
+                    <li key={index}>{tip || ""}</li>
                   ))}
                 </ul>
               </section>
