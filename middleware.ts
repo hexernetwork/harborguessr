@@ -3,42 +3,63 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export async function middleware(req: NextRequest) {
+  // Create a Supabase client configured to use cookies
   const res = NextResponse.next()
 
-  // Check if Supabase environment variables are available
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    console.log("Supabase environment variables not found, skipping auth check")
-    return res
-  }
-
   try {
-    // Create supabase middleware client
     const supabase = createMiddlewareClient({ req, res })
 
-    // Refresh session if expired
+    // Refresh session if expired - required for Server Components
     await supabase.auth.getSession()
 
-    // Check if user is trying to access protected routes
-    const url = req.nextUrl.pathname
-    const session = await supabase.auth.getSession()
-
     // Protected routes that require authentication
-    const protectedRoutes = ["/profile"]
+    const protectedPaths = ["/profile", "/profile/settings", "/profile/scores"]
+    const path = req.nextUrl.pathname
 
-    if (protectedRoutes.includes(url) && !session.data.session) {
-      // Redirect to login if trying to access protected route without session
-      const redirectUrl = req.nextUrl.clone()
-      redirectUrl.pathname = "/auth/login"
-      redirectUrl.searchParams.set("redirectTo", url)
-      return NextResponse.redirect(redirectUrl)
+    // Check if the path is protected
+    if (protectedPaths.some((prefix) => path.startsWith(prefix))) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      // If no session, redirect to login
+      if (!session) {
+        const redirectUrl = new URL("/login", req.url)
+        redirectUrl.searchParams.set("redirect", path)
+        return NextResponse.redirect(redirectUrl)
+      }
+    }
+
+    // Redirect /auth/* routes to new routes
+    if (path.startsWith("/auth/")) {
+      if (path === "/auth/login") {
+        return NextResponse.redirect(new URL("/login", req.url))
+      } else if (path === "/auth/register") {
+        return NextResponse.redirect(new URL("/register", req.url))
+      } else if (path === "/auth/forgot-password") {
+        return NextResponse.redirect(new URL("/forgot-password", req.url))
+      } else if (path === "/auth/reset-password") {
+        return NextResponse.redirect(new URL("/reset-password", req.url))
+      }
     }
   } catch (error) {
-    console.error("Error in middleware:", error)
+    console.error("Middleware error:", error)
+    // Continue without authentication if Supabase client fails
   }
 
   return res
 }
 
+// Specify which paths this middleware should run on
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.svg).*)"],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    "/((?!_next/static|_next/image|favicon.ico|public).*)",
+  ],
 }

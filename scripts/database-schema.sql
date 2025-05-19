@@ -279,3 +279,58 @@ BEGIN
   WHERE id = question_id AND language = lang;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Create a storage bucket for avatars
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true);
+
+-- Create a policy to allow authenticated users to upload avatars
+CREATE POLICY "Avatar images are publicly accessible"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'avatars');
+
+-- Create a policy to allow users to upload their own avatars
+CREATE POLICY "Users can upload avatars"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'avatars' AND auth.uid() = (storage.foldername(name))[1]::uuid);
+
+-- Create a policy to allow users to update their own avatars
+CREATE POLICY "Users can update their own avatars"
+  ON storage.objects FOR UPDATE
+  USING (bucket_id = 'avatars' AND auth.uid() = (storage.foldername(name))[1]::uuid);
+
+-- Create a policy to allow users to delete their own avatars
+CREATE POLICY "Users can delete their own avatars"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'avatars' AND auth.uid() = (storage.foldername(name))[1]::uuid);
+
+-- Check and update the handle_new_user function to ensure it's creating profiles correctly
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (
+    id, 
+    username, 
+    email,
+    preferred_language
+  )
+  VALUES (
+    NEW.id, 
+    NEW.raw_user_meta_data->>'username', 
+    NEW.email,
+    NEW.raw_user_meta_data->>'preferred_language'
+  );
+  
+  -- Log the insertion for debugging
+  RAISE NOTICE 'Created profile for user %', NEW.id;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Make sure the trigger is properly set up
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
