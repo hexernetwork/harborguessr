@@ -55,4 +55,4 @@ Users can switch between languages using the language selector in the header.
 
 ## License
 
-MIT
+MIT Licence
