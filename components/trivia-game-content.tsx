@@ -121,7 +121,7 @@ export default function TriviaGameContent() {
     }
   }
 
-  const nextQuestion = () => {
+  const nextQuestion = async () => {
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1)
       setSelectedAnswer(null)
@@ -132,7 +132,13 @@ export default function TriviaGameContent() {
       // Game over - save final score if user is logged in
       if (user) {
         try {
-          saveTriviaGameScore(user.id, score, questions.length, correctAnswers, language)
+          // Add await here
+          const result = await saveTriviaGameScore(user.id, score, questions.length, correctAnswers, language)
+          if (result) {
+            console.log("Game score saved successfully:", result)
+          } else {
+            console.error("Failed to save game score")
+          }
         } catch (error) {
           console.error("Error saving game score:", error)
         }
@@ -143,6 +149,7 @@ export default function TriviaGameContent() {
       resetGame()
     }
   }
+
 
   const resetGame = async () => {
     setLoading(true)

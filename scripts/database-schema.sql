@@ -4,7 +4,6 @@ DROP TABLE IF EXISTS achievements CASCADE;
 DROP TABLE IF EXISTS trivia_answers CASCADE;
 DROP TABLE IF EXISTS harbor_guesses CASCADE;
 DROP TABLE IF EXISTS game_scores CASCADE;
-DROP TABLE IF EXISTS profiles CASCADE;
 DROP TABLE IF EXISTS harbor_hints CASCADE;
 DROP TABLE IF EXISTS trivia_questions CASCADE;
 DROP TABLE IF EXISTS harbors CASCADE;
@@ -47,31 +46,21 @@ CREATE TABLE IF NOT EXISTS trivia_questions (
   PRIMARY KEY (id, language)
 );
 
--- User profiles table
-CREATE TABLE IF NOT EXISTS profiles (
-  id UUID REFERENCES auth.users NOT NULL PRIMARY KEY,
-  username TEXT UNIQUE,
-  full_name TEXT,
-  preferred_language TEXT DEFAULT 'fi',
-  avatar_url TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 -- Game scores table
 CREATE TABLE IF NOT EXISTS game_scores (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   game_type TEXT NOT NULL, -- 'location' or 'trivia'
   score INTEGER NOT NULL,
   completed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  language TEXT NOT NULL
+  language TEXT NOT NULL,
+  metadata JSONB DEFAULT NULL
 );
 
 -- Harbor guesses table
 CREATE TABLE IF NOT EXISTS harbor_guesses (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   harbor_id INTEGER NOT NULL,
   language TEXT NOT NULL,
   attempts INTEGER NOT NULL,
@@ -85,7 +74,7 @@ CREATE TABLE IF NOT EXISTS harbor_guesses (
 -- Trivia answers table
 CREATE TABLE IF NOT EXISTS trivia_answers (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   question_id INTEGER NOT NULL,
   language TEXT NOT NULL,
   answer_index INTEGER NOT NULL,
@@ -110,27 +99,17 @@ CREATE TABLE IF NOT EXISTS achievements (
 -- User achievements table
 CREATE TABLE IF NOT EXISTS user_achievements (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   achievement_id INTEGER REFERENCES achievements(id) ON DELETE CASCADE,
   unlocked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE (user_id, achievement_id)
 );
 
 -- Create RLS policies
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE harbor_guesses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trivia_answers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_achievements ENABLE ROW LEVEL SECURITY;
-
--- Policies for profiles
-CREATE POLICY "Users can view their own profile"
-  ON profiles FOR SELECT
-  USING (auth.uid() = id);
-
-CREATE POLICY "Users can update their own profile"
-  ON profiles FOR UPDATE
-  USING (auth.uid() = id);
 
 -- Policies for game_scores
 CREATE POLICY "Users can view their own scores"
@@ -163,20 +142,6 @@ CREATE POLICY "Users can insert their own trivia answers"
 CREATE POLICY "Users can view their own achievements"
   ON user_achievements FOR SELECT
   USING (auth.uid() = user_id);
-
--- Create triggers for updated_at
-CREATE OR REPLACE FUNCTION update_modified_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER update_profiles_modtime
-BEFORE UPDATE ON profiles
-FOR EACH ROW
-EXECUTE FUNCTION update_modified_column();
 
 -- Create function to increment view count for harbors
 CREATE OR REPLACE FUNCTION increment_harbor_view_count()
@@ -303,34 +268,3 @@ CREATE POLICY "Users can update their own avatars"
 CREATE POLICY "Users can delete their own avatars"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'avatars' AND auth.uid() = (storage.foldername(name))[1]::uuid);
-
--- Check and update the handle_new_user function to ensure it's creating profiles correctly
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.profiles (
-    id, 
-    username, 
-    email,
-    preferred_language
-  )
-  VALUES (
-    NEW.id, 
-    NEW.raw_user_meta_data->>'username', 
-    NEW.email,
-    NEW.raw_user_meta_data->>'preferred_language'
-  );
-  
-  -- Log the insertion for debugging
-  RAISE NOTICE 'Created profile for user %', NEW.id;
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Make sure the trigger is properly set up
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
-
