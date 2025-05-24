@@ -35,7 +35,7 @@ export default function UserNav() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 rounded-full"><Avatar className="h-8 w-8">{user?.user_metadata?.avatar_url ? <AvatarImage src={user.user_metadata.avatar_url} alt="User" /> : <AvatarImage src="/abstract-geometric-shapes.png" alt="User" />}<AvatarFallback>{user?.email?.charAt(0).toUpperCase() || "U"}</AvatarFallback></Avatar></Button></DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end">
-        <DropdownMenuLabel><div className="flex flex-col space-y-1"><p className="text-sm font-medium">{user?.email || "User"}</p><p className="text-xs text-muted-foreground">{user?.email || "user@example.com"}</p></div></DropdownMenuLabel>
+        <DropdownMenuLabel><div className="flex flex-col space-y-1"><p className="text-sm font-medium">{user?.email || "User"}</p><p className="text-xs text-muted-foreground">{user?.email}</p></div></DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup><DropdownMenuItem onClick={() => router.push("/profile")}>{t("navigation.profile")}</DropdownMenuItem><DropdownMenuItem onClick={() => router.push("/profile/settings")}>{t("navigation.settings")}</DropdownMenuItem></DropdownMenuGroup>
         <DropdownMenuSeparator />

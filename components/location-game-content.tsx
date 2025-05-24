@@ -1,3 +1,4 @@
+// location-game-content.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -5,7 +6,7 @@ import Link from "next/link"
 import { ArrowLeft, RefreshCw, Ship, Info, Eye, EyeOff, Search, Anchor } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { fetchHarborData } from "@/lib/data"
+import { fetchHarborData, updateHarborViewCount, saveHarborGuess, saveLocationGameScore } from "@/lib/supabase-data"
 import MapComponent from "@/components/map-component"
 import ScoreDisplay from "@/components/score-display"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -14,9 +15,8 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/contexts/language-context"
-import { updateHarborViewCount } from "@/lib/supabase-data"
 import { useAuth } from "@/contexts/auth-context"
-import { saveHarborGuess, saveLocationGameScore } from "@/lib/data"
+import { supabase } from "@/lib/supabase"
 
 export default function LocationGameContent() {
   const { t, language } = useLanguage()
@@ -37,8 +37,7 @@ export default function LocationGameContent() {
   const [searchedLocation, setSearchedLocation] = useState(null)
   const [showResultPopup, setShowResultPopup] = useState(false)
 
-  const auth = useAuth()
-  const user = auth?.user || null
+  const { user, loading: authLoading, refreshUser } = useAuth()
 
   useEffect(() => {
     async function loadData() {
@@ -94,102 +93,122 @@ export default function LocationGameContent() {
     setDistance(null)
   }
 
-  const handleGuess = () => {
-    if (!selectedLocation || !currentHarbor || !currentHarbor.coordinates) return
+  const handleGuess = async () => {
+    if (!selectedLocation || !currentHarbor || !currentHarbor.coordinates) return;
 
     // Calculate distance between selected point and actual harbor
-    const actualLat = currentHarbor.coordinates.lat
-    const actualLng = currentHarbor.coordinates.lng
-    const selectedLat = selectedLocation.lat
-    const selectedLng = selectedLocation.lng
+    const actualLat = currentHarbor.coordinates.lat;
+    const actualLng = currentHarbor.coordinates.lng;
+    const selectedLat = selectedLocation.lat;
+    const selectedLng = selectedLocation.lng;
 
     // Simple distance calculation (in km)
-    const R = 6371 // Earth's radius in km
-    const dLat = ((actualLat - selectedLat) * Math.PI) / 180
-    const dLng = ((actualLng - selectedLng) * Math.PI) / 180
+    const R = 6371; // Earth's radius in km
+    const dLat = ((actualLat - selectedLat) * Math.PI) / 180;
+    const dLng = ((actualLng - selectedLng) * Math.PI) / 180;
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos((selectedLat * Math.PI) / 180) *
         Math.cos((actualLat * Math.PI) / 180) *
         Math.sin(dLng / 2) *
-        Math.sin(dLng / 2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-    const calculatedDistance = R * c
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const calculatedDistance = R * c;
 
-    setDistance(Math.round(calculatedDistance))
+    setDistance(Math.round(calculatedDistance));
 
     // Check if guess is close enough (within 20km)
-    const isCorrect = calculatedDistance <= 20
-    const newGuessCount = guessCount + 1
+    const isCorrect = calculatedDistance <= 20;
+    const newGuessCount = guessCount + 1;
 
     // Calculate score
-    let attemptScore = 0
+    let attemptScore = 0;
     if (isCorrect) {
-      // Calculate score based on number of hints used
-      attemptScore = Math.max(100 - guessCount * 20, 20)
-      setScore((prevScore) => prevScore + attemptScore)
+      attemptScore = Math.max(100 - guessCount * 20, 20);
+      setScore((prevScore) => prevScore + attemptScore);
       setFeedback({
         type: "success",
         message: t("locationGame.correctMessage", { harborName: currentHarbor.name, score: attemptScore }),
-      })
-      setShowResultPopup(true)
-      setCorrectGuess(true)
-      setGameOver(true)
+      });
+      setShowResultPopup(true);
+      setCorrectGuess(true);
+      setGameOver(true);
     } else {
-      setGuessCount(newGuessCount)
-
+      setGuessCount(newGuessCount);
       if (newGuessCount >= 5) {
-        // Out of guesses
         setFeedback({
           type: "error",
           message: t("locationGame.outOfGuesses", { harborName: currentHarbor.name }),
-        })
-        setShowResultPopup(true)
-        setGameOver(true)
+        });
+        setShowResultPopup(true);
+        setGameOver(true);
       } else {
-        // Show next hint
         setFeedback({
           type: "warning",
           message: t("locationGame.distanceAway", {
             distance: calculatedDistance,
             guessesLeft: 5 - newGuessCount,
           }),
-        })
-        setShowResultPopup(true)
-        setCurrentHintIndex(newGuessCount)
-        setSelectedLocation(null) // Clear the selected location for the next guess
+        });
+        setShowResultPopup(true);
+        setCurrentHintIndex(newGuessCount);
+        setSelectedLocation(null);
       }
     }
 
     // Save the guess to Supabase if user is logged in
     if (user && currentHarbor.id) {
       try {
-        saveHarborGuess(user.id, currentHarbor.id, language, newGuessCount, calculatedDistance, isCorrect, attemptScore)
+        await saveHarborGuess(user.id, currentHarbor.id, language, newGuessCount, calculatedDistance, isCorrect, attemptScore);
+        console.log("Harbor guess saved successfully");
       } catch (error) {
-        console.error("Error saving harbor guess:", error)
+        console.error("Error saving harbor guess:", error.message, error);
       }
     }
-  }
+
+    // Save the game score if the round is complete (correct guess or out of guesses)
+    if (isCorrect || newGuessCount >= 5) {
+      const currentUser = await refreshUser();
+      if (currentUser) {
+        console.log("User authenticated:", currentUser.id);
+        try {
+          console.log("Calling saveLocationGameScore with:", {
+            userId: currentUser.id,
+            score: score + (isCorrect ? attemptScore : 0),
+            rounds: round,
+            language,
+          });
+          const result = await saveLocationGameScore(currentUser.id, score + (isCorrect ? attemptScore : 0), round, language);
+          console.log("Save result:", result);
+          if (result) {
+            console.log("Location game score saved/updated successfully!");
+          } else {
+            console.error("Failed to save location game score: No result returned");
+          }
+        } catch (error) {
+          console.error("Error saving location game score:", error.message, error);
+        }
+      } else {
+        console.log("No user logged in, location score not saved");
+      }
+    }
+  };
 
   const nextRound = () => {
     if (round < 5) {
-      setRound(round + 1)
-      selectRandomHarbor(harbors)
+      setRound(round + 1);
+      selectRandomHarbor(harbors);
     } else {
-      // Game over - save final score if user is logged in
-      if (user) {
-        try {
-          saveLocationGameScore(user.id, score, 5, language)
-        } catch (error) {
-          console.error("Error saving game score:", error)
-        }
-      }
-
-      // Show final score and restart option
-      alert(t("locationGame.finalScore", { score }))
-      resetGame()
+      // Show final score without resetting the game
+      setFeedback({
+        type: "info",
+        message: t("locationGame.finalScore", { score }),
+      });
+      setShowResultPopup(true);
     }
-  }
+  };
+
+
 
   const resetGame = () => {
     setRound(1)

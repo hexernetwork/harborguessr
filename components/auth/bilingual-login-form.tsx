@@ -1,3 +1,4 @@
+// bilingual-login-form.tsx
 "use client";
 
 import type React from "react";
@@ -11,9 +12,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLanguage } from "@/contexts/language-context";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"; // Use client-side client
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
-export default function BilingualLoginForm({ initialSession }) { // Accept initialSession prop
+export default function BilingualLoginForm({ initialSession }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t, language } = useLanguage() || { t: (k) => k, language: "en" };
@@ -22,7 +23,7 @@ export default function BilingualLoginForm({ initialSession }) { // Accept initi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const supabase = createClientComponentClient(); // Client-side Supabase
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
     const registered = searchParams.get("registered");
@@ -31,7 +32,7 @@ export default function BilingualLoginForm({ initialSession }) { // Accept initi
         language === "fi" ? "Rekisteröityminen onnistui! Kirjaudu sisään." : "Registration successful! Please sign in."
       );
     }
-    if (initialSession) router.push("/profile"); // Redirect if session exists
+    if (initialSession) router.push("/profile");
   }, [searchParams, language, initialSession, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -48,7 +49,7 @@ export default function BilingualLoginForm({ initialSession }) { // Accept initi
       if (error) throw error;
 
       router.push("/profile");
-      router.refresh();
+      // Remove router.refresh() as the auth state listener in UserNav will handle updates
     } catch (error: any) {
       console.error("Login error:", error);
       setError(error.message || "Failed to sign in");

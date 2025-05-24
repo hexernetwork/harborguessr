@@ -28,6 +28,28 @@ function getEndOfWeek(date: Date) {
   return new Date(date.setDate(diff))
 }
 
+const formatMemberSince = (user: any) => {
+  // Try different possible date fields
+  const dateString = user.created_at || user.user_metadata?.created_at;
+  
+  if (!dateString) return "Unknown";
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Unknown";
+    
+    // Format as day/month/year
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit', 
+      year: 'numeric'
+    });
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return "Unknown";
+  }
+};
+
 export default async function ProfilePage() {
   try {
     const supabase = createServerComponentClient({ cookies })
@@ -39,16 +61,15 @@ export default async function ProfilePage() {
       redirect("/login")
     }
 
-    const user = session.user
+    // Get the complete user data including created_at
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      redirect("/login")
+    }
 
     // Use try/catch for each database query
     let profile = null
-    try {
-      const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single()
-      profile = data
-    } catch (error) {
-      console.error("Error fetching profile:", error)
-    }
 
     // Default values for stats
     let highestLocationScore = 0
@@ -73,9 +94,10 @@ export default async function ProfilePage() {
 
     try {
       const { data: locationStats } = await supabase
-        .from("location_game_scores")
+        .from("game_scores")
         .select("score")
         .eq("user_id", user.id)
+        .eq("game_type", "location")
         .order("score", { ascending: false })
         .limit(1)
 
@@ -84,11 +106,13 @@ export default async function ProfilePage() {
       console.error("Error fetching location stats:", error)
     }
 
+
     try {
       const { data: triviaStats } = await supabase
-        .from("trivia_game_scores")
+        .from("game_scores")
         .select("score")
         .eq("user_id", user.id)
+        .eq("game_type", "trivia")
         .order("score", { ascending: false })
         .limit(1)
 
@@ -99,9 +123,10 @@ export default async function ProfilePage() {
 
     try {
       const { count } = await supabase
-        .from("location_game_scores")
+        .from("game_scores")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
+        .eq("game_type", "location")
 
       gamesCount = count || 0
     } catch (error) {
@@ -110,9 +135,10 @@ export default async function ProfilePage() {
 
     try {
       const { count } = await supabase
-        .from("trivia_game_scores")
+        .from("game_scores")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
+        .eq("game_type", "trivia")
 
       triviaCount = count || 0
     } catch (error) {
@@ -122,9 +148,10 @@ export default async function ProfilePage() {
     // Weekly stats
     try {
       const { data: weeklyLocationData } = await supabase
-        .from("location_game_scores")
+        .from("game_scores")
         .select("score")
         .eq("user_id", user.id)
+        .eq("game_type", "location")
         .gte("completed_at", startOfWeekStr)
         .lte("completed_at", endOfWeekStr)
         .order("score", { ascending: false })
@@ -137,9 +164,10 @@ export default async function ProfilePage() {
 
     try {
       const { data: weeklyTriviaData } = await supabase
-        .from("trivia_game_scores")
+        .from("game_scores")
         .select("score")
         .eq("user_id", user.id)
+        .eq("game_type", "trivia")
         .gte("completed_at", startOfWeekStr)
         .lte("completed_at", endOfWeekStr)
         .order("score", { ascending: false })
@@ -152,9 +180,10 @@ export default async function ProfilePage() {
 
     try {
       const { count } = await supabase
-        .from("location_game_scores")
+        .from("game_scores")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
+        .eq("game_type", "location")
         .gte("completed_at", startOfWeekStr)
         .lte("completed_at", endOfWeekStr)
 
@@ -163,11 +192,13 @@ export default async function ProfilePage() {
       console.error("Error fetching weekly games count:", error)
     }
 
+
     try {
       const { count } = await supabase
-        .from("trivia_game_scores")
+        .from("game_scores")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
+        .eq("game_type", "trivia")
         .gte("completed_at", startOfWeekStr)
         .lte("completed_at", endOfWeekStr)
 
@@ -222,7 +253,7 @@ export default async function ProfilePage() {
                     <div className="space-y-4">
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500 dark:text-slate-400">Member since</span>
-                        <span className="font-medium">{new Date(user.created_at).toLocaleDateString()}</span>
+                        <span className="font-medium">{formatMemberSince(user)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500 dark:text-slate-400">Games played</span>

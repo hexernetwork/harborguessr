@@ -21,12 +21,22 @@ export default function Header() {
   useEffect(() => {
     setMounted(true);
     setIsClient(true);
+    
     const checkAuth = async () => {
       const { data } = await supabase.auth.getSession();
       setIsLoggedIn(!!data.session);
     };
+    
     checkAuth();
-  }, []);
+
+    // Add auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setIsLoggedIn(!!session);
+    });
+
+    // Cleanup subscription on unmount
+    return () => subscription.unsubscribe();
+  }, [supabase.auth]);
 
   const renderInlineLanguageSelector = () => {
     if (!mounted) return null;

@@ -1,9 +1,9 @@
+// auth-context.tsx
 "use client"
 
 import { createContext, useContext, useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 
-// Create a default context value to prevent null errors
 const defaultContextValue = {
   user: null,
   loading: true,
@@ -16,46 +16,60 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function getUser() {
+    // Get initial user
+    const getInitialUser = async () => {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        setUser(session?.user || null)
+        const { data: { user } } = await supabase.auth.getUser()
+        console.log("Initial user check:", user?.id || "No user")
+        setUser(user || null)
       } catch (error) {
-        console.error("Error getting user session:", error)
+        console.error("Error getting initial user:", error)
         setUser(null)
       } finally {
         setLoading(false)
       }
     }
 
-    getUser()
+    getInitialUser()
 
     // Set up auth state listener
-    try {
-      const {
-        data: { subscription },
-      } = supabase.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user || null)
-      })
-
-      return () => {
-        subscription.unsubscribe()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event, session?.user?.id || "No user")
+      
+      if (session?.user) {
+        setUser(session.user)
+      } else {
+        setUser(null)
       }
-    } catch (error) {
-      console.error("Error setting up auth state listener:", error)
-      return () => {}
+      
+      setLoading(false)
+    })
+
+    return () => {
+      subscription.unsubscribe()
     }
   }, [])
 
-  const value = { user, loading }
+  const value = { 
+    user, 
+    loading,
+    refreshUser: async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        console.log("Refreshed user:", user?.id || "No user")
+        setUser(user || null)
+        return user || null
+      } catch (error) {
+        console.error("Error refreshing user:", error)
+        return null
+      }
+    }
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  // Return the default context value if the context is null
   return context || defaultContextValue
 }
