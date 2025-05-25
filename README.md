@@ -1,6 +1,6 @@
 # Finnish Harbor Guesser
 
-An interactive game to learn about Finnish harbors and marinas.
+An interactive game to learn about Finnish harbors and marinas. Additionally showcases an impressive implementation of a single Supabase client, eliminating the need for session or local storage for authentication.
 
 ## Features
 

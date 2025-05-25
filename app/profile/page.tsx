@@ -1,3 +1,4 @@
+// profile/page.tsx
 import type { Metadata } from "next"
 import { cookies } from "next/headers"
 import Link from "next/link"

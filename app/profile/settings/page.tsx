@@ -1,3 +1,4 @@
+// profile/settings/page.tsx
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
