@@ -26,30 +26,11 @@ function getEndOfWeek(date: Date) {
   return new Date(date.setDate(diff))
 }
 
-const formatMemberSince = (user: any) => {
-  const dateString = user.created_at || user.user_metadata?.created_at;
-  
-  if (!dateString) return "Unknown";
-  
-  try {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return "Unknown";
-    
-    return date.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: '2-digit', 
-      year: 'numeric'
-    });
-  } catch (error) {
-    console.error("Error formatting date:", error);
-    return "Unknown";
-  }
-};
-
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [memberSince, setMemberSince] = useState("Unknown")
   const [stats, setStats] = useState({
     highestLocationScore: 0,
     highestTriviaScore: 0,
@@ -61,6 +42,40 @@ export default function ProfilePage() {
     weeklyTriviaCount: 0
   })
 
+  // Fetch the REAL registration date from auth.users table
+  const fetchMemberSince = async (userId: string) => {
+    try {
+      console.log("Fetching member since date for user:", userId)
+      
+      // Use Supabase RPC function to get user creation date
+      const { data, error } = await supabase.rpc('get_user_created_at', {
+        user_id: userId
+      })
+
+      if (error) {
+        console.error("Error fetching user creation date:", error)
+        return "Unknown"
+      }
+
+      if (data) {
+        console.log("Retrieved creation date:", data)
+        const date = new Date(data)
+        const formatted = date.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: '2-digit', 
+          year: 'numeric'
+        })
+        console.log("Formatted member since date:", formatted)
+        return formatted
+      }
+
+      return "Unknown"
+    } catch (error) {
+      console.error("Error in fetchMemberSince:", error)
+      return "Unknown"
+    }
+  }
+
   useEffect(() => {
     if (authLoading) return
     
@@ -69,15 +84,34 @@ export default function ProfilePage() {
       return
     }
 
-    loadStats()
+    loadUserData()
   }, [user, authLoading, router])
 
-  const loadStats = async () => {
+  const loadUserData = async () => {
     if (!user) return
 
     try {
       setLoading(true)
 
+      // Fetch member since date and stats in parallel
+      const [memberSinceDate] = await Promise.all([
+        fetchMemberSince(user.id),
+        loadStats()
+      ])
+
+      setMemberSince(memberSinceDate)
+
+    } catch (error) {
+      console.error("Error loading user data:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadStats = async () => {
+    if (!user) return
+
+    try {
       // Get the start and end of the current week
       const now = new Date()
       const startOfWeek = getStartOfWeek(new Date(now))
@@ -182,8 +216,6 @@ export default function ProfilePage() {
 
     } catch (error) {
       console.error("Error loading stats:", error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -252,7 +284,7 @@ export default function ProfilePage() {
                   <div className="space-y-4">
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">Member since</span>
-                      <span className="font-medium">{formatMemberSince(user)}</span>
+                      <span className="font-medium">{memberSince}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 dark:text-slate-400">Games played</span>

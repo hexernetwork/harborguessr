@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase"; // Use the singleton instance
+import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/contexts/language-context";
 
 export default function UserNav() {
@@ -26,8 +26,16 @@ export default function UserNav() {
   useEffect(() => {
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error("UserNav: Error getting initial session:", error);
+        }
+        setUser(session?.user || null);
+        console.log("UserNav: Initial session user:", session?.user?.id || 'No user');
+      } catch (error) {
+        console.error("UserNav: Error in getInitialSession:", error);
+      }
     };
 
     getInitialSession();
@@ -44,12 +52,36 @@ export default function UserNav() {
   }, []);
 
   const handleSignOut = async () => {
-    setIsLoading(true);
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
-    setIsLoading(false);
+    try {
+      setIsLoading(true);
+      console.log("UserNav: Attempting to sign out...");
+      
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error("UserNav: Sign out error:", error);
+        // Still redirect even if there's an error, as the user might be logged out locally
+      } else {
+        console.log("UserNav: Sign out successful");
+      }
+      
+      // Clear user state immediately
+      setUser(null);
+      
+      // Redirect to home page
+      router.push("/");
+      router.refresh();
+    } catch (error) {
+      console.error("UserNav: Unexpected error during sign out:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Don't render if no user
+  if (!user) {
+    return null;
+  }
 
   return (
     <DropdownMenu>
@@ -68,7 +100,7 @@ export default function UserNav() {
       <DropdownMenuContent className="w-56" align="end">
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium">{user?.email || "User"}</p>
+            <p className="text-sm font-medium">{user?.user_metadata?.username || "User"}</p>
             <p className="text-xs text-muted-foreground">{user?.email}</p>
           </div>
         </DropdownMenuLabel>
