@@ -12,7 +12,7 @@ import { fetchRandomTriviaQuestions, saveQuestionAnswer, saveTriviaGameScore } f
 import ScoreDisplay from "@/components/score-display"
 import { useLanguage } from "@/contexts/language-context"
 import { useAuth } from "@/contexts/auth-context"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase" // Use the singleton instance
 
 export default function TriviaGameContent() {
   const { t, language } = useLanguage()
@@ -103,8 +103,9 @@ export default function TriviaGameContent() {
       setCorrectAnswers((prev) => prev + 1)
     }
 
-    // Get fresh user state at save time
+    // Get fresh user state at save time using the singleton client
     const { data: { user: currentUser } } = await supabase.auth.getUser();
+    console.log("Current user for answer save:", currentUser?.id || "No user");
 
     // Save the answer
     try {
@@ -136,7 +137,7 @@ export default function TriviaGameContent() {
     } else {
       console.log("Game over reached, about to save score");
       
-      // Get the current user state directly from Supabase at save time
+      // Get the current user state directly from Supabase at save time using singleton
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       console.log("Current user at save time:", currentUser?.id || "No user");
       

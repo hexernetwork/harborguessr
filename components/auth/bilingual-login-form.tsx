@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLanguage } from "@/contexts/language-context";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { supabase } from "@/lib/supabase"; // Use the singleton instance
 
 export default function BilingualLoginForm({ initialSession }) {
   const router = useRouter();
@@ -23,7 +23,6 @@ export default function BilingualLoginForm({ initialSession }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const supabase = createClientComponentClient();
 
   useEffect(() => {
     const registered = searchParams.get("registered");
@@ -32,7 +31,10 @@ export default function BilingualLoginForm({ initialSession }) {
         language === "fi" ? "Rekisteröityminen onnistui! Kirjaudu sisään." : "Registration successful! Please sign in."
       );
     }
-    if (initialSession) router.push("/profile");
+    if (initialSession) {
+      console.log("Initial session found, redirecting to profile");
+      router.push("/profile");
+    }
   }, [searchParams, language, initialSession, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -41,6 +43,7 @@ export default function BilingualLoginForm({ initialSession }) {
     setLoading(true);
 
     try {
+      console.log("Attempting login...");
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -48,8 +51,14 @@ export default function BilingualLoginForm({ initialSession }) {
 
       if (error) throw error;
 
-      router.push("/profile");
-      // Remove router.refresh() as the auth state listener in UserNav will handle updates
+      console.log("Login successful, user:", data.user?.id);
+      
+      // Wait a moment for the auth state to propagate
+      setTimeout(() => {
+        router.push("/profile");
+        router.refresh();
+      }, 100);
+      
     } catch (error: any) {
       console.error("Login error:", error);
       setError(error.message || "Failed to sign in");

@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase"
 
 export default function LocationGameContent() {
   const { t, language } = useLanguage()
+  const { user, loading: authLoading } = useAuth()
   const [currentHarbor, setCurrentHarbor] = useState(null)
   const [harbors, setHarbors] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,8 +37,15 @@ export default function LocationGameContent() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchedLocation, setSearchedLocation] = useState(null)
   const [showResultPopup, setShowResultPopup] = useState(false)
+  const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`)
 
-  const { user, loading: authLoading, refreshUser } = useAuth()
+  // Debug logging for auth state
+  useEffect(() => {
+    console.log("Auth state in location game:", { 
+      user: user?.id || "No user", 
+      loading: authLoading 
+    });
+  }, [user, authLoading]);
 
   useEffect(() => {
     async function loadData() {
@@ -156,40 +164,62 @@ export default function LocationGameContent() {
       }
     }
 
-    // Save the guess to Supabase if user is logged in
-    if (user && currentHarbor.id) {
+    // Get fresh user state at save time using the singleton client
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    console.log("Current user for harbor guess save:", currentUser?.id || "No user");
+
+    // Save the harbor guess
+    if (currentHarbor.id) {
       try {
-        await saveHarborGuess(user.id, currentHarbor.id, language, newGuessCount, calculatedDistance, isCorrect, attemptScore);
+        await saveHarborGuess(
+          currentUser?.id || null,
+          currentHarbor.id,
+          language,
+          newGuessCount,
+          calculatedDistance,
+          isCorrect,
+          attemptScore,
+          currentUser?.id ? null : sessionId
+        );
         console.log("Harbor guess saved successfully");
       } catch (error) {
-        console.error("Error saving harbor guess:", error.message, error);
+        console.error("Error saving harbor guess:", error);
       }
     }
 
     // Save the game score if the round is complete (correct guess or out of guesses)
     if (isCorrect || newGuessCount >= 5) {
-      const currentUser = await refreshUser();
-      if (currentUser) {
-        console.log("User authenticated:", currentUser.id);
-        try {
-          console.log("Calling saveLocationGameScore with:", {
-            userId: currentUser.id,
-            score: score + (isCorrect ? attemptScore : 0),
-            rounds: round,
-            language,
-          });
-          const result = await saveLocationGameScore(currentUser.id, score + (isCorrect ? attemptScore : 0), round, language);
-          console.log("Save result:", result);
-          if (result) {
-            console.log("Location game score saved/updated successfully!");
-          } else {
-            console.error("Failed to save location game score: No result returned");
-          }
-        } catch (error) {
-          console.error("Error saving location game score:", error.message, error);
+      console.log("Round complete, about to save location game score");
+      
+      // Get fresh user state again for game score save
+      const { data: { user: gameScoreUser } } = await supabase.auth.getUser();
+      console.log("Current user at location game score save time:", gameScoreUser?.id || "No user");
+      
+      try {
+        const finalScore = score + (isCorrect ? attemptScore : 0);
+        console.log("Calling saveLocationGameScore with:", {
+          userId: gameScoreUser?.id || null,
+          score: finalScore,
+          rounds: round,
+          language,
+          sessionId: gameScoreUser?.id ? null : sessionId
+        });
+        
+        const result = await saveLocationGameScore(
+          gameScoreUser?.id || null,
+          finalScore,
+          round,
+          language,
+          gameScoreUser?.id ? null : sessionId
+        );
+        
+        if (result) {
+          console.log("Location game score saved successfully!");
+        } else {
+          console.error("Failed to save location game score: No result returned");
         }
-      } else {
-        console.log("No user logged in, location score not saved");
+      } catch (error) {
+        console.error("Error saving location game score:", error);
       }
     }
   };
@@ -207,8 +237,6 @@ export default function LocationGameContent() {
       setShowResultPopup(true);
     }
   };
-
-
 
   const resetGame = () => {
     setRound(1)
