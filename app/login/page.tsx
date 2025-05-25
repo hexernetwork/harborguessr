@@ -1,20 +1,40 @@
-import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import BilingualLoginForm from "@/components/auth/bilingual-login-form";
-import { createClient } from "@/lib/supabase";
+// app/login/page.tsx
+"use client"
 
-export const metadata: Metadata = {
-  title: "Login | Finnish Harbor Guesser",
-  description: "Sign in to your Finnish Harbor Guesser account",
-};
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import BilingualLoginForm from "@/components/auth/bilingual-login-form"
+import { supabase } from "@/lib/supabase"
 
-export default async function LoginPage({ searchParams }: { searchParams: { registered?: string; reset?: string } }) {
-  const cookieStore = await cookies();
-  const supabase = createClient({ cookies: () => cookieStore });
-  const { data: { session } } = await supabase.auth.getSession();
+export default function LoginPage() {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
 
-  if (session) redirect("/profile");
+  useEffect(() => {
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      setSession(session)
+      setLoading(false)
+      
+      if (session) {
+        router.push("/profile")
+      }
+    }
+
+    getSession()
+  }, [router])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
@@ -31,5 +51,5 @@ export default async function LoginPage({ searchParams }: { searchParams: { regi
         </div>
       </div>
     </div>
-  );
+  )
 }

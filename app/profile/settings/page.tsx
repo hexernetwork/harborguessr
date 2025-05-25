@@ -1,4 +1,5 @@
 // profile/settings/page.tsx
+export const dynamic = 'force-dynamic'
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
