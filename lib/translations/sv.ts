@@ -34,6 +34,7 @@ const sv = {
     signingOut: "Loggar ut...",
     openStreetMapContributors: "OpenStreetMap-bidragsgivare",
     openStreetMapLicense: "Open Data Commons Open Database License (ODbL)",
+    continue: "Domkraft",
   },
   navigation: {
     home: "Hem",
@@ -92,6 +93,7 @@ const sv = {
     searchedLocation: "Sökt plats",
     yourGuess: "Din gissning",
     actualLocation: "Faktisk plats",
+    previousGuesses: "Tidigare Gissningar",
   },
   triviaGame: {
     title: "Hamn Frågesport",
@@ -230,6 +232,7 @@ const sv = {
     signingOut: "Loggar ut...",
     user: "Användare",
     userAvatar: "Användaravatar",
+    noAccount: "Ingen Användare?",
   },
   profile: {
     title: "Profil",

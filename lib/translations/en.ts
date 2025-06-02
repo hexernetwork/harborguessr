@@ -34,6 +34,7 @@ const en = {
     signingOut: "Signing out...",
     openStreetMapContributors: "OpenStreetMap contributors",
     openStreetMapLicense: "Open Data Commons Open Database License (ODbL)",
+    continue: "Continue"
   },
   navigation: {
     home: "Home",
@@ -92,6 +93,7 @@ const en = {
     searchedLocation: "Searched Location",
     yourGuess: "Your guess",
     actualLocation: "Actual location",
+    previousGuesses: "Previous Guesses",
   },
   triviaGame: {
     title: "Harbor Trivia",
@@ -234,6 +236,7 @@ const en = {
     signingOut: "Signing out...",
     user: "User",
     userAvatar: "User Avatar",
+    noAccount: "No Account?",
   },
   profile: {
     title: "Profile",

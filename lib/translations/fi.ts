@@ -34,6 +34,7 @@ const fi = {
     signingOut: "Kirjaudutaan ulos...",
     openStreetMapContributors: "OpenStreetMap-avustajat",
     openStreetMapLicense: "Open Data Commons Open Database License (ODbL)",
+    continue: "Jatka",
   },
   navigation: {
     home: "Etusivu",
@@ -92,6 +93,7 @@ const fi = {
     searchedLocation: "Haettu sijainti",
     yourGuess: "Sinun arvauksesi",
     actualLocation: "Todellinen sijainti",
+    previousGuesses: "Arvaukset",
   },
   triviaGame: {
     title: "Satama-tietovisa",
@@ -233,6 +235,7 @@ const fi = {
     signingOut: "Kirjaudutaan ulos...",
     user: "Käyttäjä",
     userAvatar: "Käyttäjän avatar",
+    noAccount: "Ei Käyttäjää?",
   },
   profile: {
     title: "Profiili",

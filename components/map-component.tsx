@@ -1,13 +1,11 @@
-// // components/map-component.tsx
-
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Anchor, Layers } from "lucide-react"
-import "leaflet/dist/leaflet.css" // Import Leaflet CSS
+import { Anchor, Layers, X } from "lucide-react"
+import "leaflet/dist/leaflet.css"
 import { useLanguage } from "@/contexts/language-context"
 
-// This component uses Leaflet.js with OpenStreetMap
+// This component uses Leaflet.js with OpenStreetMap or Esri satellite
 export default function MapComponent({
   selectedLocation = null,
   setSelectedLocation = null,
@@ -17,6 +15,8 @@ export default function MapComponent({
   showHarborNames = false,
   harborData = [],
   searchedLocation = null,
+  gameHistory = [],
+  currentHarbor = null,
 }) {
   const { t } = useLanguage() || { t: (key) => key }
   const mapRef = useRef(null)
@@ -25,40 +25,30 @@ export default function MapComponent({
   const actualMarkerRef = useRef(null)
   const harborMarkersRef = useRef([])
   const searchMarkerRef = useRef(null)
+  const guessMarkersRef = useRef([])
   const [mapLoaded, setMapLoaded] = useState(false)
-  const [mapStyle, setMapStyle] = useState("standard") // Default to standard style
+  const [mapStyle, setMapStyle] = useState("standard") // Default to satellite?
   const [showStyleDropdown, setShowStyleDropdown] = useState(false)
+  const [isFullScreen, setIsFullScreen] = useState(false)
 
-  // Finland's bounding box approximately
+  // Finland's bounding box
   const finlandBounds = [
-    [59.7, 19.1], // Southwest corner
-    [70.1, 31.6], // Northeast corner
+    [59.7, 19.1], // Southwest
+    [70.1, 31.6], // Northeast
   ]
 
-  // Get map background color based on style
-  const getMapBackgroundColor = (style) => {
-    switch (style) {
-      case "satellite":
-        return "#000000" // Black for satellite
-      case "terrain":
-        return "#d8e8ef" // Light blue for terrain
-      case "standard":
-      default:
-        return "#f2f2f2" // Light gray for standard
-    }
-  }
-
-  // Get tile URL based on style
-  const getTileUrl = (style) => {
-    switch (style) {
-      case "satellite":
-        return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-      case "terrain":
-        return "https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}.jpg"
-      case "standard":
-      default:
-        return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-    }
+  // Map style configurations
+  const mapStyles = {
+    standard: {
+      tileUrl: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      attribution: '', // Empty to hide attribution
+      backgroundColor: "#f2f2f2",
+    },
+    satellite: {
+      tileUrl: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attribution: '', // Empty to hide attribution
+      backgroundColor: "#000000",
+    },
   }
 
   // Update map style
@@ -70,65 +60,68 @@ export default function MapComponent({
       }
     })
 
-    // Update the map background color to match the tiles
+    // Update background color
     if (mapRef.current) {
-      mapRef.current.style.backgroundColor = getMapBackgroundColor(style)
+      mapRef.current.style.backgroundColor = mapStyles[style].backgroundColor
     }
 
-    // Add new tile layer based on selected style
-    const tileUrl = getTileUrl(style)
-    L.tileLayer(tileUrl, {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    // Add new tile layer
+    L.tileLayer(mapStyles[style].tileUrl, {
+      attribution: mapStyles[style].attribution,
       maxZoom: 19,
+      noWrap: true,
     }).addTo(map)
+  }
+
+  // Toggle full-screen
+  const toggleFullScreen = () => {
+    if (!mapInstanceRef.current) return
+    setIsFullScreen(!isFullScreen)
+    setTimeout(() => {
+      mapInstanceRef.current.invalidateSize()
+    }, 100)
   }
 
   // Load map
   const loadMap = async () => {
     try {
-      // Check if window is defined (client-side)
       if (typeof window === "undefined") return
 
-      // Import Leaflet
       const L = await import("leaflet")
 
-      // Make sure we only initialize the map once and the ref exists
       if (mapInstanceRef.current || !mapRef.current) return
 
       // Set initial background color
       if (mapRef.current) {
-        mapRef.current.style.backgroundColor = getMapBackgroundColor(mapStyle)
+        mapRef.current.style.backgroundColor = mapStyles[mapStyle].backgroundColor
       }
 
-      // Initialize the map
+      // Initialize map
       const map = L.map(mapRef.current, {
         center: [64.0, 26.0], // Center of Finland
         zoom: 5,
-        zoomControl: false, // Hide default zoom controls
+        zoomControl: false,
+        attributionControl: false, // Hide attribution control
       })
 
       // Add tile layer
-      const tileUrl = getTileUrl(mapStyle)
-      L.tileLayer(tileUrl, {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      L.tileLayer(mapStyles[mapStyle].tileUrl, {
+        attribution: mapStyles[mapStyle].attribution,
         maxZoom: 19,
+        noWrap: true,
       }).addTo(map)
 
-      // Add click handler to the map if setSelectedLocation is provided
+      // Add click handler
       if (setSelectedLocation) {
         map.on("click", (e) => {
-          if (setSelectedLocation) {
-            setSelectedLocation({
-              lat: e.latlng.lat,
-              lng: e.latlng.lng,
-            })
-          }
+          setSelectedLocation({
+            lat: e.latlng.lat,
+            lng: e.latlng.lng,
+          })
         })
       }
 
-      // Store the map instance
       mapInstanceRef.current = map
-
       setMapLoaded(true)
     } catch (error) {
       console.error("Error loading map:", error)
@@ -136,14 +129,8 @@ export default function MapComponent({
   }
 
   useEffect(() => {
-    // Import Leaflet dynamically (client-side only)
-    const loadMapWrapper = async () => {
-      await loadMap()
-    }
+    loadMap()
 
-    loadMapWrapper()
-
-    // Cleanup function
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove()
@@ -152,22 +139,21 @@ export default function MapComponent({
     }
   }, [setSelectedLocation])
 
-  // Function to change map style
+  // Change map style
   const changeMapStyle = (style) => {
     setMapStyle(style)
+    setShowStyleDropdown(false)
 
     if (mapInstanceRef.current) {
-      import("leaflet")
-        .then((L) => {
-          updateMapStyle(mapInstanceRef.current, L, style)
-        })
-        .catch((error) => {
-          console.error("Error updating map style:", error)
-        })
+      import("leaflet").then((L) => {
+        updateMapStyle(mapInstanceRef.current, L, style)
+      }).catch((error) => {
+        console.error("Error updating map style:", error)
+      })
     }
   }
 
-  // Close dropdown when clicking outside
+  // Close dropdown on outside click
   useEffect(() => {
     if (showStyleDropdown) {
       const handleClickOutside = (event) => {
@@ -175,11 +161,8 @@ export default function MapComponent({
           setShowStyleDropdown(false)
         }
       }
-
       document.addEventListener("mousedown", handleClickOutside)
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside)
-      }
+      return () => document.removeEventListener("mousedown", handleClickOutside)
     }
   }, [showStyleDropdown])
 
@@ -187,49 +170,62 @@ export default function MapComponent({
   useEffect(() => {
     if (!mapLoaded || !mapInstanceRef.current) return
 
-    const updateStyle = async () => {
-      try {
-        const L = await import("leaflet")
-        updateMapStyle(mapInstanceRef.current, L, mapStyle)
-      } catch (error) {
-        console.error("Error updating map style:", error)
-      }
-    }
-
-    updateStyle()
+    import("leaflet").then((L) => {
+      updateMapStyle(mapInstanceRef.current, L, mapStyle)
+    }).catch((error) => {
+      console.error("Error updating map style:", error)
+    })
   }, [mapStyle, mapLoaded])
 
-  // Handle harbor data to show names on the map
+  // Handle full-screen state
   useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current || !showHarborNames || !harborData || harborData.length === 0) return
+    if (!mapInstanceRef.current) return
 
-    const loadHarborMarkers = async () => {
+    if (isFullScreen) {
+      document.body.style.overflow = 'hidden'
+      mapRef.current.style.zIndex = '1000'
+    } else {
+      document.body.style.overflow = 'auto'
+      mapRef.current.style.zIndex = '10'
+    }
+
+    mapInstanceRef.current.invalidateSize()
+  }, [isFullScreen])
+
+  // Handle game history
+  useEffect(() => {
+    if (!mapLoaded || !mapInstanceRef.current || !gameHistory || gameHistory.length === 0) return
+
+    const loadGameHistoryMarkers = async () => {
       try {
         const L = await import("leaflet")
 
-        // Clear existing harbor markers
-        harborMarkersRef.current.forEach((marker) => marker.remove())
-        harborMarkersRef.current = []
+        guessMarkersRef.current.forEach((marker) => marker.remove())
+        guessMarkersRef.current = []
 
-        // Add markers for all harbors with names
-        harborData.forEach((harbor) => {
-          if (!harbor || !harbor.coordinates || !harbor.coordinates.lat || !harbor.coordinates.lng) {
-            console.warn("Invalid harbor data:", harbor)
+        gameHistory.forEach((guess, index) => {
+          if (!guess.selectedLocation) return
+
+          const lat = guess.selectedLocation?.lat || guess.lat
+          const lng = guess.selectedLocation?.lng || guess.lng
+
+          if (!lat || !lng) {
+            console.warn("Invalid guess location:", guess)
             return
           }
 
-          // Create a custom icon for harbor markers
-          const harborIcon = L.divIcon({
+          const isCorrect = guess.correct
+          const attemptNumber = index + 1
+          const color = isCorrect ? '#10b981' : `hsl(${(attemptNumber * 60) % 360}, 70%, 50%)`
+
+          const guessIcon = L.divIcon({
             html: `
               <div class="relative">
-                <div class="absolute -top-3 -left-3 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center shadow-md border border-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
-                    <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
-                  </svg>
+                <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border-2 border-white" style="background-color: ${color}">
+                  <span class="text-white text-xs font-bold">${attemptNumber}</span>
                 </div>
-                <div class="absolute -top-9 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
-                  ${harbor.name || t("map.unknownHarbor")}
+                <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 text-white px-1 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color: ${color}">
+                  ${isCorrect ? t("locationGame.correct") : `${Math.round(guess.distance)}km`}
                 </div>
               </div>
             `,
@@ -237,17 +233,80 @@ export default function MapComponent({
             iconSize: [0, 0],
           })
 
-          // Add marker at harbor location
+          const marker = L.marker([lat, lng], { icon: guessIcon }).addTo(mapInstanceRef.current)
+          marker.bindPopup(`
+            <div class="p-2">
+              <h3 class="font-bold">${t("locationGame.guess")} ${attemptNumber}</h3>
+              <p class="text-xs mt-1">${t("locationGame.distance")}: ${Math.round(guess.distance)}km</p>
+              <p class="text-xs mt-1">${t("locationGame.score")}: ${guess.score}</p>
+              <p class="text-xs mt-1">${isCorrect ? t("locationGame.correct") : t("locationGame.incorrect")}</p>
+            </div>
+          `)
+          guessMarkersRef.current.push(marker)
+        })
+
+        console.log(`Added ${guessMarkersRef.current.length} guess markers to map`)
+      } catch (error) {
+        console.error("Error loading game history markers:", error)
+      }
+    }
+
+    loadGameHistoryMarkers()
+
+    return () => {
+      guessMarkersRef.current.forEach((marker) => marker.remove())
+      guessMarkersRef.current = []
+    }
+  }, [mapLoaded, gameHistory, t])
+
+  // Handle harbor data
+  useEffect(() => {
+    if (!mapLoaded || !mapInstanceRef.current || !showHarborNames || !harborData || harborData.length === 0) return
+
+    const loadHarborMarkers = async () => {
+      try {
+        const L = await import("leaflet")
+
+        harborMarkersRef.current.forEach((marker) => marker.remove())
+        harborMarkersRef.current = []
+
+        harborData.forEach((harbor) => {
+          if (!harbor || !harbor.coordinates || !harbor.coordinates.lat || !harbor.coordinates.lng) {
+            console.warn("Invalid harbor data:", harbor)
+            return
+          }
+
+          const isCurrentHarbor = currentHarbor && harbor.id === currentHarbor.id
+          const markerColor = isCurrentHarbor ? '#f59e0b' : '#2563eb'
+
+          const harborIcon = L.divIcon({
+            html: `
+              <div class="relative">
+                <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center shadow-md border border-white" style="background-color: ${markerColor}">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
+                    <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
+                  </svg>
+                </div>
+                <div class="absolute -top-9 left-1/2 transform -translate-x-1/2 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color: ${markerColor}">
+                  ${harbor.name || t("map.unknownHarbor")}${isCurrentHarbor ? ' ⭐' : ''}
+                </div>
+              </div>
+            `,
+            className: "",
+            iconSize: [0, 0],
+          })
+
           const marker = L.marker([harbor.coordinates.lat, harbor.coordinates.lng], { icon: harborIcon }).addTo(
             mapInstanceRef.current,
           )
 
-          // Add popup with harbor info
           marker.bindPopup(`
             <div class="p-2">
-              <h3 class="font-bold">${harbor.name || t("map.unknownHarbor")}</h3>
+              <h3 class="font-bold">${harbor.name || t("map.unknownHarbor")}${isCurrentHarbor ? ' ⭐' : ''}</h3>
               <p class="text-xs mt-1">${harbor.region || t("map.unknownRegion")}</p>
               <p class="text-xs mt-1">${(harbor.type || []).join(", ") || t("map.unknownType")}</p>
+              ${isCurrentHarbor ? '<p class="text-xs mt-1 font-bold text-amber-600">Current target</p>' : ''}
             </div>
           `)
 
@@ -261,13 +320,12 @@ export default function MapComponent({
     loadHarborMarkers()
 
     return () => {
-      // Clean up harbor markers when component unmounts or dependencies change
       harborMarkersRef.current.forEach((marker) => marker.remove())
       harborMarkersRef.current = []
     }
-  }, [mapLoaded, showHarborNames, harborData, t])
+  }, [mapLoaded, showHarborNames, harborData, currentHarbor, t])
 
-  // Handle selected location changes
+  // Handle selected location
   useEffect(() => {
     if (!mapLoaded || !mapInstanceRef.current) return
 
@@ -275,15 +333,12 @@ export default function MapComponent({
       try {
         const L = await import("leaflet")
 
-        // Remove existing marker if any
         if (markerRef.current) {
           markerRef.current.remove()
           markerRef.current = null
         }
 
-        // Add new marker if location is selected
         if (selectedLocation) {
-          // Create a custom icon for the guess marker with anchor symbol
           const guessIcon = L.divIcon({
             html: `
               <div class="relative">
@@ -304,7 +359,6 @@ export default function MapComponent({
             iconSize: [0, 0],
           })
 
-          // Add marker at selected location
           markerRef.current = L.marker([selectedLocation.lat, selectedLocation.lng], { icon: guessIcon }).addTo(
             mapInstanceRef.current,
           )
@@ -317,7 +371,7 @@ export default function MapComponent({
     updateSelectedMarker()
   }, [selectedLocation, mapLoaded, t])
 
-  // Handle actual location changes
+  // Handle actual location
   useEffect(() => {
     if (!mapLoaded || !mapInstanceRef.current) return
 
@@ -325,15 +379,12 @@ export default function MapComponent({
       try {
         const L = await import("leaflet")
 
-        // Remove existing actual marker if any
         if (actualMarkerRef.current) {
           actualMarkerRef.current.remove()
           actualMarkerRef.current = null
         }
 
-        // Add new marker if actual location is provided
         if (actualLocation) {
-          // Create a custom icon for the actual location marker
           const actualIcon = L.divIcon({
             html: `
               <div class="relative">
@@ -352,12 +403,10 @@ export default function MapComponent({
             iconSize: [0, 0],
           })
 
-          // Add marker at actual location
           actualMarkerRef.current = L.marker([actualLocation.lat, actualLocation.lng], { icon: actualIcon }).addTo(
             mapInstanceRef.current,
           )
 
-          // Draw line between guess and actual if both exist
           if (selectedLocation) {
             const line = L.polyline(
               [
@@ -367,14 +416,12 @@ export default function MapComponent({
               { color: "red", dashArray: "5, 10", weight: 2 },
             ).addTo(mapInstanceRef.current)
 
-            // Zoom to fit both markers
             const bounds = L.latLngBounds(
               [selectedLocation.lat, selectedLocation.lng],
               [actualLocation.lat, actualLocation.lng],
             )
             mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] })
           } else {
-            // Just zoom to the actual location
             mapInstanceRef.current.setView([actualLocation.lat, actualLocation.lng], 10)
           }
         }
@@ -386,7 +433,7 @@ export default function MapComponent({
     updateActualMarker()
   }, [actualLocation, selectedLocation, harborName, mapLoaded, t])
 
-  // Handle searched location changes
+  // Handle searched location
   useEffect(() => {
     if (!mapLoaded || !mapInstanceRef.current || !searchedLocation) return
 
@@ -394,16 +441,13 @@ export default function MapComponent({
       try {
         const L = await import("leaflet")
 
-        // Remove existing search marker if any
         if (searchMarkerRef.current) {
           searchMarkerRef.current.remove()
           searchMarkerRef.current = null
         }
 
-        // Zoom to the searched location (but not too close)
         mapInstanceRef.current.setView([searchedLocation.lat, searchedLocation.lng], 8)
 
-        // Create a custom icon for the search marker
         const searchIcon = L.divIcon({
           html: `
             <div class="relative">
@@ -422,22 +466,19 @@ export default function MapComponent({
           iconSize: [0, 0],
         })
 
-        // Add marker at searched location
         searchMarkerRef.current = L.marker([searchedLocation.lat, searchedLocation.lng], { icon: searchIcon }).addTo(
           mapInstanceRef.current,
         )
 
-        // Add popup with location info
         searchMarkerRef.current
           .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold">${searchedLocation.name}</h3>
-            <p class="text-xs mt-1">${t("map.searchedLocation")}</p>
-          </div>
-        `)
+            <div class="p-2">
+              <h3 class="font-bold">${searchedLocation.name}</h3>
+              <p class="text-xs mt-1">${t("map.searchedLocation")}</p>
+            </div>
+          `)
           .openPopup()
 
-        // Auto-remove the search marker after 5 seconds
         setTimeout(() => {
           if (searchMarkerRef.current) {
             searchMarkerRef.current.remove()
@@ -452,7 +493,7 @@ export default function MapComponent({
     updateSearchMarker()
   }, [searchedLocation, mapLoaded, t])
 
-  // Force map resize when window is resized
+  // Force map resize
   useEffect(() => {
     const handleResize = () => {
       if (mapInstanceRef.current) {
@@ -461,14 +502,11 @@ export default function MapComponent({
     }
 
     window.addEventListener("resize", handleResize)
-
-    return () => {
-      window.removeEventListener("resize", handleResize)
-    }
+    return () => window.removeEventListener("resize", handleResize)
   }, [])
 
   return (
-    <div className="relative w-full h-[500px] bg-blue-50">
+    <div className={`relative w-full ${isFullScreen ? 'fixed inset-0 z-50' : 'h-[500px]'} bg-blue-50`}>
       <div ref={mapRef} className="w-full h-full z-10"></div>
 
       {!selectedLocation && !actualLocation && setSelectedLocation && (
@@ -488,9 +526,26 @@ export default function MapComponent({
         </div>
       )}
 
-      {/* Custom map controls */}
+      {gameHistory && gameHistory.length > 0 && (
+        <div className="absolute bottom-4 left-4 z-20">
+          <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg text-xs">
+            <p className="font-medium text-slate-800 dark:text-white mb-1">{t("locationGame.previousGuesses")}:</p>
+            <div className="flex gap-1">
+              {gameHistory.slice(0, 5).map((guess, index) => (
+                <div
+                  key={index}
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                  style={{ backgroundColor: guess.correct ? '#10b981' : `hsl(${(index * 60) % 360}, 70%, 50%)` }}
+                >
+                  {index + 1}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
-        {/* Zoom controls */}
         <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg">
           <div className="flex flex-col gap-2">
             <button
@@ -510,7 +565,6 @@ export default function MapComponent({
           </div>
         </div>
 
-        {/* Map style selector */}
         <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg map-style-dropdown">
           <div className="relative">
             <button
@@ -521,50 +575,23 @@ export default function MapComponent({
               <Layers className="h-4 w-4" />
             </button>
 
-            {/* Dropdown for map styles */}
             {showStyleDropdown && (
-              <div className="absolute right-full mr-2 top-0">
+              <div className="absolute top-0 right-full mr-2">
                 <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 w-32">
                   <div className="flex flex-col gap-1">
-                    <button
-                      className={`text-xs text-left px-2 py-1.5 rounded ${
-                        mapStyle === "standard"
-                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                          : "hover:bg-slate-100 dark:hover:bg-slate-700"
-                      }`}
-                      onClick={() => {
-                        changeMapStyle("standard")
-                        setShowStyleDropdown(false)
-                      }}
-                    >
-                      {t("map.standard")}
-                    </button>
-                    <button
-                      className={`text-xs text-left px-2 py-1.5 rounded ${
-                        mapStyle === "satellite"
-                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                          : "hover:bg-slate-100 dark:hover:bg-slate-700"
-                      }`}
-                      onClick={() => {
-                        changeMapStyle("satellite")
-                        setShowStyleDropdown(false)
-                      }}
-                    >
-                      {t("map.satellite")}
-                    </button>
-                    <button
-                      className={`text-xs text-left px-2 py-1.5 rounded ${
-                        mapStyle === "terrain"
-                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                          : "hover:bg-slate-100 dark:hover:bg-slate-700"
-                      }`}
-                      onClick={() => {
-                        changeMapStyle("terrain")
-                        setShowStyleDropdown(false)
-                      }}
-                    >
-                      {t("map.terrain")}
-                    </button>
+                    {Object.keys(mapStyles).map((style) => (
+                      <button
+                        key={style}
+                        className={`text-xs text-left px-2 py-1.5 rounded ${
+                          mapStyle === style
+                            ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                            : "hover:bg-slate-100 dark:hover:bg-slate-700"
+                        }`}
+                        onClick={() => changeMapStyle(style)}
+                      >
+                        {t(`map.${style}`)}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
