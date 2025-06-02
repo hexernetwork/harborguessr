@@ -314,3 +314,64 @@ CREATE INDEX IF NOT EXISTS idx_harbor_guesses_user_id ON harbor_guesses(user_id)
 CREATE INDEX IF NOT EXISTS idx_harbor_guesses_session_id ON harbor_guesses(session_id);
 CREATE INDEX IF NOT EXISTS idx_trivia_answers_user_id ON trivia_answers(user_id);
 CREATE INDEX IF NOT EXISTS idx_trivia_answers_session_id ON trivia_answers(session_id);
+
+-- Add image fields to harbors table
+ALTER TABLE harbors ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT NULL;
+ALTER TABLE harbors ADD COLUMN IF NOT EXISTS image_filename TEXT DEFAULT NULL;
+ALTER TABLE harbors ADD COLUMN IF NOT EXISTS image_uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+
+-- Create harbor_images table for better image management (optional, for multiple images per harbor)
+CREATE TABLE IF NOT EXISTS harbor_images (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  harbor_id INTEGER NOT NULL,
+  filename TEXT NOT NULL,
+  url TEXT NOT NULL,
+  alt_text TEXT DEFAULT NULL,
+  uploaded_by UUID REFERENCES auth.users(id),
+  uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_primary BOOLEAN DEFAULT FALSE,
+  file_size INTEGER DEFAULT NULL,
+  content_type TEXT DEFAULT NULL
+);
+
+-- Add index for harbor images
+CREATE INDEX IF NOT EXISTS idx_harbor_images_harbor_id ON harbor_images(harbor_id);
+CREATE INDEX IF NOT EXISTS idx_harbor_images_primary ON harbor_images(harbor_id, is_primary);
+
+-- Create storage bucket for harbor images
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('harbor-images', 'harbor-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Storage policies for harbor images
+CREATE POLICY "Harbor images are publicly accessible"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'harbor-images');
+
+CREATE POLICY "Authenticated users can upload harbor images"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'harbor-images' AND auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can update harbor images"
+  ON storage.objects FOR UPDATE
+  USING (bucket_id = 'harbor-images' AND auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can delete harbor images"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'harbor-images' AND auth.role() = 'authenticated');
+
+-- Function to clean up orphaned images (run periodically)
+CREATE OR REPLACE FUNCTION cleanup_orphaned_harbor_images()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER := 0;
+BEGIN
+  -- Delete harbor_images records that don't have corresponding harbors
+  DELETE FROM harbor_images 
+  WHERE harbor_id NOT IN (SELECT DISTINCT id FROM harbors);
+  
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;

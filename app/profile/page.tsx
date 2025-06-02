@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Trophy, MapPin, Compass, User, Settings, Calendar } from "lucide-react"
+import { ArrowLeft, Trophy, MapPin, Compass, User, Settings, Calendar, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -307,6 +307,16 @@ export default function ProfilePage() {
                         Account Settings
                       </Button>
                     </Link>
+                    
+                    {/* Admin Dashboard Link - only show for admins */}
+                    {user?.user_metadata?.role === 'admin' && (
+                      <Link href="/admin">
+                        <Button variant="outline" className="w-full flex items-center gap-2 justify-start border-red-200 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">
+                          <Shield className="h-4 w-4" />
+                          Admin Dashboard
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 </CardContent>
               </Card>
