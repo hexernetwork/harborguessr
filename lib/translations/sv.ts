@@ -94,6 +94,10 @@ const sv = {
     yourGuess: "Din gissning",
     actualLocation: "Faktisk plats",
     previousGuesses: "Tidigare Gissningar",
+    savedGameFound: "Sparad spel hittades",
+    savedGameSubtitle: "Vill du fortsätta ditt sparade spel eller börja om?",
+    gameComplete: "Spel klart!",
+    playAgain: "Spela igen",
   },
   triviaGame: {
     title: "Hamn Frågesport",

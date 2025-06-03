@@ -94,6 +94,10 @@ const en = {
     yourGuess: "Your guess",
     actualLocation: "Actual location",
     previousGuesses: "Previous Guesses",
+    savedGameFound: "Saved Game Found",
+    savedGameSubtitle: "Would you like to continue your saved game or start fresh?",
+    gameComplete: "Game Complete!",
+    playAgain: "Play Again",
   },
   triviaGame: {
     title: "Harbor Trivia",

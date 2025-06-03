@@ -94,6 +94,12 @@ const fi = {
     yourGuess: "Sinun arvauksesi",
     actualLocation: "Todellinen sijainti",
     previousGuesses: "Arvaukset",
+    savedGameFound: "Löydettiin tallennettu peli",
+    savedGameSubtitle: "Haluatko jatkaa keskenjäänyttä peliä vai aloittaa uuden?",
+    gameComplete: "Peli päättyi!",
+    playAgain: "Pelaa uudelleen",
+    seeFinalResult: "Katso lopputulos",
+
   },
   triviaGame: {
     title: "Satama-tietovisa",

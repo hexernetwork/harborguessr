@@ -6,7 +6,7 @@ import Link from "next/link"
 import { ArrowLeft, RefreshCw, Ship, Info, Eye, EyeOff, Search, Anchor, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { saveHarborGuess, saveLocationGameScore } from "@/lib/supabase-data"
+import { saveLocationGameScore } from "@/lib/supabase-data"
 import { fetchHarborsFromWorker } from "@/lib/worker-data"
 import { 
   saveGameState, 
@@ -49,6 +49,8 @@ export default function LocationGameContent() {
   const [showRestorePrompt, setShowRestorePrompt] = useState(false)
   const [gameHistory, setGameHistory] = useState([]) // All guesses
   const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [gameCompleted, setGameCompleted] = useState(false) // Track if game is fully completed
+  const [showFinalResults, setShowFinalResults] = useState(false) // Show final results modal
 
   // Helper: Get current harbor guesses and state
   const getCurrentHarborState = () => {
@@ -73,10 +75,11 @@ export default function LocationGameContent() {
       gameStarted,
       sessionId,
       language,
-      gameHistory
+      gameHistory,
+      gameCompleted
     }
     saveGameState(gameState)
-    console.log("Game state saved")
+    console.log("Game state saved - Round:", round, "Harbor:", currentHarbor.name, "Guesses:", gameHistory.length)
   }
 
   useEffect(() => {
@@ -93,19 +96,18 @@ export default function LocationGameContent() {
       const savedGame = loadGameState()
       console.log("Checking for saved game:", savedGame)
       
-      // Always show restore prompt if there's a saved game with progress
-      if (savedGame && savedGame.gameStarted && savedGame.language === language) {
-        console.log("Found saved game - checking progress...")
-        console.log("Round:", savedGame.round, "History:", savedGame.gameHistory?.length, "Score:", savedGame.score)
-        
-        // Show restore prompt for ANY saved game progress
+      // SIMPLIFIED: Only restore if there are actual guesses made (ignore language mismatch)
+      if (savedGame && savedGame.gameStarted && savedGame.gameHistory && savedGame.gameHistory.length > 0) {
+        console.log("Found saved game with guesses, showing restore prompt")
         setShowRestorePrompt(true)
         setLoading(false)
         return
       }
       
-      console.log("No saved game found, starting fresh")
-      await loadGameData() // No saved game to pass
+      // Otherwise always start fresh
+      console.log("Starting fresh game")
+      clearGameState() // Clear any stale data
+      await loadGameData()
       
     } catch (error) {
       console.error("Error initializing game:", error)
@@ -158,8 +160,19 @@ export default function LocationGameContent() {
     setSessionId(savedGame.sessionId || sessionId)
     setGameHistory(savedGame.gameHistory || [])
     setGameStarted(true)
+    setGameCompleted(savedGame.gameCompleted || false)
     
     console.log("Restored game history:", savedGame.gameHistory?.length || 0, "guesses")
+    console.log("Language change:", savedGame.language, "→", language)
+    
+    // Check if game was already completed
+    if (savedGame.gameCompleted) {
+      setFeedback({
+        type: "info",
+        message: t("locationGame.finalScore", { score: savedGame.score || 0 })
+      })
+      return
+    }
     
     // Check if current harbor is complete and set appropriate feedback
     if (savedGame.currentHarbor && savedGame.gameHistory) {
@@ -180,6 +193,12 @@ export default function LocationGameContent() {
           type: "error",
           message: t("locationGame.outOfGuesses", { harborName: savedGame.currentHarbor.name })
         })
+      } else if (currentGuesses.length > 0) {
+        // Show info about previous attempts to help user understand what happened
+        setFeedback({
+          type: "info",
+          message: `${language === 'fi' ? 'Peli palautettu' : 'Game restored'} - ${currentGuesses.length} ${language === 'fi' ? 'yritystä tehty' : 'attempts made'}`
+        })
       }
     }
   }
@@ -198,6 +217,7 @@ export default function LocationGameContent() {
     clearGameState()
     setShowRestorePrompt(false)
     setGameHistory([])
+    setGameCompleted(false)
     loadGameData() // Start fresh without saved game
   }
 
@@ -212,13 +232,22 @@ export default function LocationGameContent() {
     setFeedback(null)
 
     console.log(`Selected harbor: ${harbor.name} (ID: ${harbor.id})`)
-    console.log("Harbor hints:", harbor.hints)
     
-    // Save the game state with the new harbor
+    // Save immediately when harbor is selected (for round progression)
     if (gameStarted) {
-      setTimeout(() => {
-        saveCurrentGameState()
-      }, 100)
+      const immediateGameState = {
+        currentHarbor: harbor,
+        harbors,
+        score,
+        round,
+        gameStarted,
+        sessionId,
+        language,
+        gameHistory,
+        gameCompleted
+      }
+      saveGameState(immediateGameState)
+      console.log("IMMEDIATE save after harbor selection - Round:", round, "Harbor:", harbor.name)
     }
   }
 
@@ -249,9 +278,14 @@ export default function LocationGameContent() {
     const isCorrect = calculatedDistance <= 20
     const newGuessCount = state.guessCount + 1
 
-    // Calculate score
+    // Anti-cheat: Check if this harbor has already been correctly guessed before
+    const previousCorrectGuess = gameHistory.find(guess => 
+      guess.harborId === currentHarbor.id && guess.correct
+    )
+
+    // Calculate score - no points if already correctly guessed this harbor before
     let attemptScore = 0
-    if (isCorrect) {
+    if (isCorrect && !previousCorrectGuess) {
       attemptScore = Math.max(100 - (newGuessCount - 1) * 20, 20)
       setScore(prevScore => prevScore + attemptScore)
     }
@@ -274,13 +308,35 @@ export default function LocationGameContent() {
     setGameHistory(newHistory)
     console.log("Added guess to history. Total guesses:", newHistory.length)
     
+    // Save state IMMEDIATELY with the new guess (before any other state updates)
+    const immediateGameState = {
+      currentHarbor,
+      harbors,
+      score: score + attemptScore, // Include the new score immediately
+      round,
+      gameStarted,
+      sessionId,
+      language,
+      gameHistory: newHistory, // Use the new history immediately
+      gameCompleted
+    }
+    saveGameState(immediateGameState)
+    console.log("IMMEDIATE save after guess - Round:", round, "Harbor:", currentHarbor.name, "Guesses:", newHistory.length)
+    
     // Set feedback based on result
     if (isCorrect) {
-      setFeedback({
-        type: "success",
-        message: t("locationGame.correctMessage", { harborName: currentHarbor.name, score: attemptScore })
-      })
-      setShowSuccessModal(true)
+      if (previousCorrectGuess) {
+        setFeedback({
+          type: "warning",
+          message: `${t("locationGame.correctMessage", { harborName: currentHarbor.name, score: 0 })} (${language === 'fi' ? 'Ei pisteitä - jo ratkaistu aiemmin' : 'No points - already solved previously'})`
+        })
+      } else {
+        setFeedback({
+          type: "success",
+          message: t("locationGame.correctMessage", { harborName: currentHarbor.name, score: attemptScore })
+        })
+        setShowSuccessModal(true)
+      }
     } else if (newGuessCount >= 5) {
       setFeedback({
         type: "error",
@@ -296,94 +352,59 @@ export default function LocationGameContent() {
       })
     }
 
-    // Save state immediately with the updated history
-    setTimeout(() => {
-      const gameState = {
-        currentHarbor,
-        harbors,
-        score: score + (isCorrect ? attemptScore : 0), // Include the new score
-        round,
-        gameStarted,
-        sessionId,
-        language,
-        gameHistory: newHistory // Use the new history directly
-      }
-      saveGameState(gameState)
-      console.log("Game state saved with", newHistory.length, "guesses")
-      
-      // Also save to Supabase
-      saveGuessToSupabase(guessRecord)
-    }, 100)
-
     setSelectedLocation(null)
   }
 
-  const saveGuessToSupabase = async (guessRecord) => {
-    try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
-      
-      await saveHarborGuess(
-        currentUser?.id || null,
-        guessRecord.harborId,
-        language,
-        guessRecord.attempts,
-        guessRecord.distance,
-        guessRecord.correct,
-        guessRecord.score,
-        currentUser?.id ? null : sessionId
-      )
-    } catch (error) {
-      console.error("Error saving guess:", error)
-    }
-  }
-
-  const nextRound = () => {
-    if (round < 5) {
-      const newRound = round + 1
-      setRound(newRound)
-      selectRandomHarbor(harbors)
-      
-      // Save the new round state immediately
-      setTimeout(() => {
-        const gameState = {
-          currentHarbor: null, // Will be set by selectRandomHarbor
-          harbors,
-          score,
-          round: newRound,
-          gameStarted,
-          sessionId,
-          language,
-          gameHistory
-        }
-        saveGameState(gameState)
-        console.log("Saved new round state:", newRound)
-      }, 200) // Give selectRandomHarbor time to run
-      
-    } else {
-      // Game completed
-      saveCompleteGameToSupabase()
-      setFeedback({
-        type: "info",
-        message: t("locationGame.finalScore", { score })
-      })
-    }
-  }
-
+  // Save complete game to Supabase - only called once when game finishes
   const saveCompleteGameToSupabase = async () => {
+    if (gameCompleted) {
+      console.log("Game already completed and saved, skipping duplicate save")
+      return
+    }
+
     try {
+      console.log("Saving complete game to Supabase...")
       const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      // Calculate total correct guesses
+      const correctGuesses = gameHistory.filter(guess => guess.correct).length
       
       await saveLocationGameScore(
         currentUser?.id || null,
         score,
-        5,
+        correctGuesses,
         language,
         currentUser?.id ? null : sessionId
       )
       
+      // Mark game as completed to prevent duplicate saves
+      setGameCompleted(true)
+      
+      // Clear the saved game state since it's now complete
       clearGameState()
+      
+      console.log("Game successfully saved to Supabase")
     } catch (error) {
       console.error("Error saving complete game:", error)
+    }
+  }
+
+  const nextRound = async () => {
+    if (round < 3) {
+      const newRound = round + 1
+      setRound(newRound)
+      selectRandomHarbor(harbors)
+      
+      // Save the round progression immediately after state updates
+      setTimeout(() => {
+        saveCurrentGameState()
+      }, 100)
+      
+    } else {
+      // Game completed - save to Supabase and show results
+      await saveCompleteGameToSupabase()
+      setShowFinalResults(true)
+      setFeedback(null)
     }
   }
 
@@ -392,6 +413,8 @@ export default function LocationGameContent() {
     setRound(1)
     setScore(0)
     setGameHistory([])
+    setGameCompleted(false)
+    setShowFinalResults(false)
     selectRandomHarbor(harbors)
   }
 
@@ -478,7 +501,7 @@ export default function LocationGameContent() {
 
           <div className="flex items-center gap-4">
             <div className="bg-blue-600 text-white text-xs font-medium py-1.5 px-3 rounded-full shadow-md">
-              {t("locationGame.round")} {round}/5
+              {t("locationGame.round")} {round}/3
             </div>
             <Button onClick={resetGame} variant="outline" size="sm" className="flex items-center gap-1">
               <RotateCcw className="h-3 w-3" />
@@ -597,9 +620,19 @@ export default function LocationGameContent() {
                     {t("locationGame.confirmGuess")}
                   </Button>
                 </div>
+              ) : gameCompleted ? (
+                <Button 
+                  onClick={() => setShowFinalResults(true)} 
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {t("locationGame.seeFinalResults")}
+                </Button>
               ) : (
-                <Button onClick={nextRound} className="w-full bg-blue-600 hover:bg-blue-700">
-                  {round < 5 ? t("locationGame.nextHarbor") : t("locationGame.seeFinalScore")}
+                <Button 
+                  onClick={nextRound} 
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {round < 3 ? t("locationGame.nextHarbor") : t("locationGame.seeFinalScore")}
                 </Button>
               )}
 
@@ -637,11 +670,98 @@ export default function LocationGameContent() {
               showHarborNames={showHarborNames}
               harborData={harbors}
               searchedLocation={searchedLocation}
-              gameHistory={currentState.currentGuesses}
+              gameHistory={currentHarbor ? gameHistory.filter(guess => guess.harborId === currentHarbor.id) : []} // Always show current harbor's guesses
               currentHarbor={currentHarbor}
             />
           </div>
         </div>
+
+        {/* Final Results Modal */}
+        {showFinalResults && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-8">
+              <div className="text-center">
+                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                </div>
+                
+                <h2 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">
+                  {language === 'fi' ? 'Peli valmis!' : 'Game Complete!'}
+                </h2>
+                
+                <div className="text-6xl font-bold text-blue-600 dark:text-blue-400 mb-4">
+                  {score}
+                </div>
+                <p className="text-lg text-slate-600 dark:text-slate-400 mb-6">
+                  {language === 'fi' ? 'Loppupisteesi' : 'Final Score'}
+                </p>
+
+                {/* Game Statistics */}
+                <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4 mb-6">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <div className="text-slate-500 dark:text-slate-400">
+                        {language === 'fi' ? 'Oikeat vastaukset' : 'Correct Guesses'}
+                      </div>
+                      <div className="text-xl font-bold text-green-600 dark:text-green-400">
+                        {gameHistory.filter((guess, index) => 
+                          guess.correct && gameHistory.findIndex(g => g.harborId === guess.harborId && g.correct) === index
+                        ).length}/3
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500 dark:text-slate-400">
+                        {language === 'fi' ? 'Yhteensä yrityksiä' : 'Total Attempts'}
+                      </div>
+                      <div className="text-xl font-bold text-slate-700 dark:text-slate-300">
+                        {gameHistory.length}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Performance Message */}
+                <div className="mb-6">
+                  {score >= 240 ? (
+                    <p className="text-green-600 dark:text-green-400 font-medium">
+                      {language === 'fi' ? '🎉 Loistava suoritus!' : '🎉 Excellent performance!'}
+                    </p>
+                  ) : score >= 180 ? (
+                    <p className="text-blue-600 dark:text-blue-400 font-medium">
+                      {language === 'fi' ? '👍 Hyvä työ!' : '👍 Good job!'}
+                    </p>
+                  ) : score >= 120 ? (
+                    <p className="text-amber-600 dark:text-amber-400 font-medium">
+                      {language === 'fi' ? '👌 Ei hassumpi!' : '👌 Not bad!'}
+                    </p>
+                  ) : (
+                    <p className="text-slate-600 dark:text-slate-400 font-medium">
+                      {language === 'fi' ? '🎯 Harjoitus tekee mestarin!' : '🎯 Practice makes perfect!'}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <Button
+                    onClick={resetGame}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {language === 'fi' ? 'Pelaa uudelleen' : 'Play Again'}
+                  </Button>
+                  <Button
+                    onClick={() => setShowFinalResults(false)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    {language === 'fi' ? 'Sulje' : 'Close'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Success Modal */}
         {showSuccessModal && (
