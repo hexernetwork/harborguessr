@@ -1,11 +1,11 @@
-// profile/settings/page.tsx
+// app/profile/settings/page.tsx
 export const runtime = 'edge';
-export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic';
+
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
-
 import ProfileSettingsForm from "../profile-settings-form";
 
 export const metadata: Metadata = {
@@ -14,16 +14,27 @@ export const metadata: Metadata = {
 };
 
 export default async function ProfileSettingsPage() {
-  const supabase = createServerComponentClient({ cookies: () => cookies() }); // Await cookies
+  // Await cookies() before using it
+  const cookieStore = await cookies();
+  const supabase = createServerComponentClient({ 
+    cookies: () => cookieStore 
+  });
+  
   const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    redirect("/login");
+  }
 
-  if (!session) redirect("/login");
-
-  const { data: { user } } = await supabase.auth.getUser(); // Secure user fetch
-
+  const { data: { user } } = await supabase.auth.getUser();
+  
   let profile = null;
   try {
-    const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
     profile = data;
   } catch (error) {
     console.error("Error fetching profile:", error);

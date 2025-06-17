@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Shield, ArrowLeft, Settings } from "lucide-react";
+import { Shield, ArrowLeft, Settings, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,6 +14,7 @@ import TriviaManagement from "@/components/admin/trivia-management";
 import HarborEditModal from "@/components/admin/harbor-edit-modal";
 import TriviaEditModal from "@/components/admin/trivia-edit-modal";
 import HarborViewModal from "@/components/admin/harbor-view-modal";
+import CacheManagement from "@/components/admin/cache-management";
 
 interface AdminDashboardProps {
   initialUser: any;
@@ -222,10 +223,11 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
 
           {/* Management Tabs */}
           <Tabs defaultValue="harbors" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="harbors">Harbors</TabsTrigger>
               <TabsTrigger value="trivia">Trivia</TabsTrigger>
               <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="cache">Cache</TabsTrigger>
               <TabsTrigger value="settings">Settings</TabsTrigger>
             </TabsList>
 
@@ -260,12 +262,16 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
               </div>
             </TabsContent>
 
+            <TabsContent value="cache">
+              <CacheManagement />
+            </TabsContent>
+
             <TabsContent value="settings">
               <div className="bg-white dark:bg-gray-800 rounded-lg p-6">
                 <Alert>
                   <Settings className="h-4 w-4" />
                   <AlertDescription>
-                    System settings panel coming soon. This will include cache management, analytics, and more.
+                    System settings panel coming soon. This will include analytics, user management, and more.
                   </AlertDescription>
                 </Alert>
               </div>

@@ -2,15 +2,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Upload, MapPin, Save, Plus, Trash } from "lucide-react";
+import { X, Upload, MapPin, Save, Plus, Trash, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/lib/supabase";
 
 interface HarborData {
@@ -203,9 +203,33 @@ const REGIONS = {
   ]
 };
 
+// Cache service functions
+const clearHarborCache = async () => {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL}/cache/clear`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'harbors',
+        adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN
+      })
+    });
+
+    const result = await response.json();
+    console.log('✅ Harbor cache cleared:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ Failed to clear harbor cache:', error);
+    throw error;
+  }
+};
+
 export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: HarborEditModalProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
   const [harborData, setHarborData] = useState<Record<string, HarborData>>({});
   const [activeLanguage, setActiveLanguage] = useState('fi');
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -215,8 +239,31 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
   useEffect(() => {
     if (isOpen && harborId) {
       loadHarborData();
+    } else if (isOpen && !harborId) {
+      // Initialize empty data for new harbor
+      initializeEmptyData();
     }
   }, [isOpen, harborId]);
+
+  const initializeEmptyData = () => {
+    const emptyData: HarborData = {
+      id: 0,
+      name: '',
+      coordinates: { lat: 0, lng: 0 },
+      region: '',
+      type: [],
+      notable_feature: '',
+      description: '',
+      language: 'fi'
+    };
+    
+    setHarborData({
+      fi: { ...emptyData, language: 'fi' },
+      en: { ...emptyData, language: 'en' },
+      sv: { ...emptyData, language: 'sv' }
+    });
+    setHints({ fi: [], en: [], sv: [] });
+  };
 
   const loadHarborData = async () => {
     if (!harborId) return;
@@ -316,23 +363,33 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
     try {
       setSaving(true);
       
-      // TODO: Upload image to Cloudflare R2 if provided
-      // For now, we'll save without image upload
+      // Get next ID if creating new harbor
+      let savedHarborId = harborId;
+      if (!savedHarborId) {
+        const { data: maxIdData } = await supabase
+          .from('harbors')
+          .select('id')
+          .order('id', { ascending: false })
+          .limit(1);
+        
+        savedHarborId = (maxIdData?.[0]?.id || 0) + 1;
+      }
       
-      // Save harbor data for each language
+      // Save harbor data for each language that has content
       for (const [lang, data] of Object.entries(harborData)) {
-        if (data) {
+        if (data && data.name.trim()) {
           const { error } = await supabase
             .from('harbors')
             .upsert({
-              id: harborId,
+              id: savedHarborId,
               language: lang,
               name: data.name,
               coordinates: data.coordinates,
               region: data.region,
               type: data.type,
               notable_feature: data.notable_feature,
-              description: data.description
+              description: data.description,
+              view_count: data.view_count || 0
             });
 
           if (error) throw error;
@@ -346,14 +403,14 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
           await supabase
             .from('harbor_hints')
             .delete()
-            .eq('harbor_id', harborId)
+            .eq('harbor_id', savedHarborId)
             .eq('language', lang);
 
           // Insert new hints
           const hintsToInsert = langHints
             .filter(hint => hint.trim())
             .map((hint, index) => ({
-              harbor_id: harborId,
+              harbor_id: savedHarborId,
               language: lang,
               hint_order: index + 1,
               hint_text: hint
@@ -367,6 +424,18 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
             if (error) throw error;
           }
         }
+      }
+
+      // 🚀 CLEAR CACHE AUTOMATICALLY AFTER SAVING
+      try {
+        setClearingCache(true);
+        await clearHarborCache();
+        console.log('✅ Harbor cache cleared successfully');
+      } catch (cacheError) {
+        console.error('⚠️ Failed to clear cache:', cacheError);
+        // Don't fail the save operation if cache clearing fails
+      } finally {
+        setClearingCache(false);
       }
 
       onSave();
@@ -383,7 +452,9 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
 
   const currentData = harborData[activeLanguage] || {};
   const currentHints = hints[activeLanguage] || [];
-  const availableLanguages = Object.keys(harborData);
+  const availableLanguages = Object.keys(harborData).filter(
+    lang => harborData[lang]?.name?.trim()
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -411,6 +482,18 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
           </div>
         ) : (
           <div className="p-6 space-y-6">
+            {/* Cache Status Alert */}
+            {(saving || clearingCache) && (
+              <Alert>
+                <RefreshCw className={`h-4 w-4 ${clearingCache ? 'animate-spin' : ''}`} />
+                <AlertDescription>
+                  {saving && !clearingCache && "Saving harbor data..."}
+                  {clearingCache && "Clearing cache to update live site..."}
+                  {!saving && !clearingCache && "Harbor saved and cache cleared!"}
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Language Selection */}
             <div>
               <Label className="text-sm font-medium mb-2 block">Editing Language</Label>
@@ -518,7 +601,7 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
                       value={currentData.coordinates?.lat || ''}
                       onChange={(e) => handleInputChange('coordinates', {
                         ...currentData.coordinates,
-                        lat: parseFloat(e.target.value)
+                        lat: parseFloat(e.target.value) || 0
                       })}
                     />
                     <Input
@@ -528,7 +611,7 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
                       value={currentData.coordinates?.lng || ''}
                       onChange={(e) => handleInputChange('coordinates', {
                         ...currentData.coordinates,
-                        lng: parseFloat(e.target.value)
+                        lng: parseFloat(e.target.value) || 0
                       })}
                     />
                   </div>
@@ -627,14 +710,15 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-3 border-t pt-6">
-              <Button variant="outline" onClick={onClose}>
+              <Button variant="outline" onClick={onClose} disabled={saving || clearingCache}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? (
+              <Button onClick={handleSave} disabled={saving || clearingCache}>
+                {saving || clearingCache ? (
                   <>
                     <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
-                    Saving...
+                    {saving && !clearingCache && 'Saving Harbor...'}
+                    {clearingCache && 'Updating Cache...'}
                   </>
                 ) : (
                   <>
@@ -643,6 +727,11 @@ export default function HarborEditModal({ harborId, isOpen, onClose, onSave }: H
                   </>
                 )}
               </Button>
+            </div>
+            
+            {/* Cache Info */}
+            <div className="text-xs text-gray-500 text-center">
+              💡 Changes will be visible immediately after saving (cache auto-clears)
             </div>
           </div>
         )}

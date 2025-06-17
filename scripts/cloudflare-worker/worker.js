@@ -374,7 +374,7 @@ async function getTriviaFromDatabase(language, env) {
  * }
  * 
  * SECURITY:
- * - Requires ADMIN_TOKEN environment variable
+ * - Requires NEXT_PUBLIC_ADMIN_TOKEN environment variable
  * - Only accessible with correct token
  */
 async function clearCache(request, env, corsHeaders) {
@@ -383,7 +383,7 @@ async function clearCache(request, env, corsHeaders) {
     const { type, language, adminToken } = body;
 
     // Verify admin token
-    if (adminToken !== env.ADMIN_TOKEN) {
+    if (adminToken !== env.NEXT_PUBLIC_ADMIN_TOKEN) {
       return new Response(JSON.stringify({ 
         error: 'Unauthorized',
         message: 'Invalid admin token'
@@ -521,7 +521,7 @@ async function uploadImage(request, env, corsHeaders) {
     const adminToken = formData.get('adminToken');
 
     // Verify admin token
-    if (adminToken !== env.ADMIN_TOKEN) {
+    if (adminToken !== env.NEXT_PUBLIC_ADMIN_TOKEN) {
       return new Response(JSON.stringify({ 
         error: 'Unauthorized',
         message: 'Invalid admin token'

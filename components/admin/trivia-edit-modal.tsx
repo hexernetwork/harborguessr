@@ -2,15 +2,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, HelpCircle, Save, Plus, Trash, Check } from "lucide-react";
+import { X, HelpCircle, Save, Plus, Trash, Check, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/lib/supabase";
 
 interface TriviaData {
@@ -20,6 +20,7 @@ interface TriviaData {
   correct_answer: number;
   explanation: string;
   language: string;
+  view_count?: number;
 }
 
 interface TriviaEditModalProps {
@@ -35,9 +36,33 @@ const LANGUAGES = [
   { code: 'sv', name: 'Swedish' }
 ];
 
+// Cache service function
+const clearTriviaCache = async () => {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL}/cache/clear`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'trivia',
+        adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN
+      })
+    });
+
+    const result = await response.json();
+    console.log('✅ Trivia cache cleared:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ Failed to clear trivia cache:', error);
+    throw error;
+  }
+};
+
 export default function TriviaEditModal({ triviaId, isOpen, onClose, onSave }: TriviaEditModalProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
   const [triviaData, setTriviaData] = useState<Record<string, TriviaData>>({});
   const [activeLanguage, setActiveLanguage] = useState('fi');
 
@@ -185,6 +210,18 @@ export default function TriviaEditModal({ triviaId, isOpen, onClose, onSave }: T
         }
       }
 
+      // 🚀 CLEAR CACHE AUTOMATICALLY AFTER SAVING
+      try {
+        setClearingCache(true);
+        await clearTriviaCache();
+        console.log('✅ Trivia cache cleared successfully');
+      } catch (cacheError) {
+        console.error('⚠️ Failed to clear cache:', cacheError);
+        // Don't fail the save operation if cache clearing fails
+      } finally {
+        setClearingCache(false);
+      }
+
       onSave();
       onClose();
       
@@ -234,6 +271,18 @@ export default function TriviaEditModal({ triviaId, isOpen, onClose, onSave }: T
           </div>
         ) : (
           <div className="p-6 space-y-6">
+            {/* Cache Status Alert */}
+            {(saving || clearingCache) && (
+              <Alert>
+                <RefreshCw className={`h-4 w-4 ${clearingCache ? 'animate-spin' : ''}`} />
+                <AlertDescription>
+                  {saving && !clearingCache && "Saving trivia question..."}
+                  {clearingCache && "Clearing cache to update live site..."}
+                  {!saving && !clearingCache && "Question saved and cache cleared!"}
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Language Selection */}
             <div>
               <Label className="text-sm font-medium mb-2 block">Editing Language</Label>
@@ -356,14 +405,15 @@ export default function TriviaEditModal({ triviaId, isOpen, onClose, onSave }: T
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-3 border-t pt-6">
-              <Button variant="outline" onClick={onClose}>
+              <Button variant="outline" onClick={onClose} disabled={saving || clearingCache}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={saving || !currentData.question?.trim()}>
-                {saving ? (
+              <Button onClick={handleSave} disabled={saving || clearingCache || !currentData.question?.trim()}>
+                {saving || clearingCache ? (
                   <>
                     <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
-                    Saving...
+                    {saving && !clearingCache && 'Saving Question...'}
+                    {clearingCache && 'Updating Cache...'}
                   </>
                 ) : (
                   <>
@@ -372,6 +422,11 @@ export default function TriviaEditModal({ triviaId, isOpen, onClose, onSave }: T
                   </>
                 )}
               </Button>
+            </div>
+            
+            {/* Cache Info */}
+            <div className="text-xs text-gray-500 text-center">
+              💡 Changes will be visible immediately after saving (cache auto-clears)
             </div>
           </div>
         )}
