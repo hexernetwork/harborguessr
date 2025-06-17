@@ -1,3 +1,4 @@
+// middleware.ts
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
@@ -5,23 +6,42 @@ import type { NextRequest } from "next/server"
 export async function middleware(req: NextRequest) {
   // Create a Supabase client configured to use cookies
   const res = NextResponse.next()
-
   try {
     const supabase = createMiddlewareClient({ req, res })
-
     // Refresh session if expired - required for Server Components
     await supabase.auth.getSession()
-
+    
     // Protected routes that require authentication
     const protectedPaths = ["/profile", "/profile/settings", "/profile/scores"]
+    // Admin routes that require admin role
+    const adminPaths = ["/admin"]
     const path = req.nextUrl.pathname
-
-    // Check if the path is protected
+    
+    // Check if the path is admin protected
+    if (adminPaths.some((prefix) => path.startsWith(prefix))) {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      // If no session, redirect to login
+      if (!session) {
+        const redirectUrl = new URL("/login", req.url)
+        redirectUrl.searchParams.set("redirect", path)
+        return NextResponse.redirect(redirectUrl)
+      }
+      
+      // Check if user is admin
+      const { data: { user } } = await supabase.auth.getUser()
+      const isAdmin = user?.user_metadata?.role === 'admin'
+      
+      if (!isAdmin) {
+        return NextResponse.redirect(new URL("/", req.url))
+      }
+    }
+    
+    // Check if the path is protected (regular auth)
     if (protectedPaths.some((prefix) => path.startsWith(prefix))) {
       const {
         data: { session },
       } = await supabase.auth.getSession()
-
       // If no session, redirect to login
       if (!session) {
         const redirectUrl = new URL("/login", req.url)
@@ -29,7 +49,7 @@ export async function middleware(req: NextRequest) {
         return NextResponse.redirect(redirectUrl)
       }
     }
-
+    
     // Redirect /auth/* routes to new routes
     if (path.startsWith("/auth/")) {
       if (path === "/auth/login") {
@@ -46,7 +66,6 @@ export async function middleware(req: NextRequest) {
     console.error("Middleware error:", error)
     // Continue without authentication if Supabase client fails
   }
-
   return res
 }
 
