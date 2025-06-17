@@ -1,20 +1,43 @@
 // app/admin/page.tsx
-import { cookies } from "next/headers";
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+'use client';
+
+import { useAuth } from "@/contexts/auth-context";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import AdminDashboard from "@/components/admin/admin-dashboard";
-import type { Metadata } from "next";
 
-export const metadata: Metadata = {
-  title: "Admin Dashboard | Finnish Harbor Guesser",
-  description: "Manage harbors, trivia questions, and users",
-};
+export const runtime = 'edge';
 
-export default async function AdminPage() {
-  const cookieStore = await cookies();
-  const supabase = createServerComponentClient({ cookies: () => cookieStore });
-  
-  // Get user data (auth already verified by middleware)
-  const { data: { user } } = await supabase.auth.getUser();
-  
+export default function AdminPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading) {
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+      
+      const isAdmin = user?.user_metadata?.role === 'admin';
+      if (!isAdmin) {
+        router.replace("/");
+        return;
+      }
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!user || user?.user_metadata?.role !== 'admin') {
+    return null;
+  }
+
   return <AdminDashboard initialUser={user} />;
 }
