@@ -287,7 +287,7 @@ export default function CacheManagement() {
                 <li>• Users load the game → API checks cache first</li>
                 <li>• If cached → Instant response (5-15ms)</li>
                 <li>• If empty → Database query + cache (200-500ms)</li>
-                <li>• Cache expires after 1 hour automatically</li>
+                <li>• Cache expires after 1 year automatically</li>
               </ul>
             </div>
             <div>
