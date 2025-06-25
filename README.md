@@ -178,6 +178,7 @@ npm install
    ```
    SUPABASE_URL = https://your-project-id.supabase.co
    SUPABASE_ANON_KEY = your_anon_key_from_supabase
+   R2_PUBLIC_URL = https://pub...r2.dev
    ```
 5. **Bind KV namespace**:
    - Scroll down to **"KV Namespace Bindings"** 
