@@ -8,11 +8,82 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { fetchRandomTriviaQuestions, saveQuestionAnswer, saveTriviaGameScore } from "@/lib/supabase-data"
+import { saveQuestionAnswer, saveTriviaGameScore } from "@/lib/supabase-data"
 import ScoreDisplay from "@/components/score-display"
 import { useLanguage } from "@/contexts/language-context"
 import { useAuth } from "@/contexts/auth-context"
-import { supabase } from "@/lib/supabase" // Use the singleton instance
+import { supabase } from "@/lib/supabase"
+
+// Fetch trivia from cached worker API
+async function fetchTriviaFromWorker(language) {
+  try {
+    const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL
+    
+    if (!workerUrl) {
+      throw new Error('NEXT_PUBLIC_WORKER_URL environment variable is not set')
+    }
+    
+    console.log(`🎯 Fetching trivia from worker cache: ${workerUrl}/trivia?lang=${language}`)
+    
+    const response = await fetch(`${workerUrl}/trivia?lang=${language}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Worker API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    console.log(`✅ Fetched ${data.length} trivia questions from worker cache (${response.headers.get('X-Cache') || 'UNKNOWN'})`)
+    
+    // Transform to match expected format and shuffle for randomness
+    const shuffled = data
+      .map(question => ({
+        id: question.id,
+        language: question.language,
+        question: question.question,
+        answers: question.answers,
+        correctAnswer: question.correct_answer !== undefined ? question.correct_answer : 0,
+        explanation: question.explanation || "No explanation available",
+        viewCount: question.view_count || 0,
+        lastViewed: question.last_viewed,
+      }))
+      .sort(() => Math.random() - 0.5) // Shuffle for randomness
+      .slice(0, 5) // Take 5 random questions
+
+    return shuffled
+  } catch (error) {
+    console.error('❌ Error fetching trivia from worker:', error)
+    
+    // Fallback to direct Supabase query if worker fails
+    console.log('🔄 Falling back to direct Supabase query...')
+    const { data, error: supabaseError } = await supabase
+      .from("trivia_questions")
+      .select("*")
+      .eq("language", language)
+      .order("view_count", { ascending: true, nullsFirst: true })
+      .limit(5)
+
+    if (supabaseError) {
+      console.error("Supabase fallback failed:", supabaseError)
+      return []
+    }
+
+    return data.map(question => ({
+      id: question.id,
+      language: question.language,
+      question: question.question,
+      answers: question.answers,
+      correctAnswer: question.correct_answer !== undefined ? question.correct_answer : 0,
+      explanation: question.explanation || "No explanation available",
+      viewCount: question.view_count || 0,
+      lastViewed: question.last_viewed,
+    }))
+  }
+}
 
 export default function TriviaGameContent() {
   const { t, language } = useLanguage()
@@ -41,7 +112,7 @@ export default function TriviaGameContent() {
     async function loadData() {
       try {
         setLoading(true)
-        const data = await fetchRandomTriviaQuestions(language, 5)
+        const data = await fetchTriviaFromWorker(language)
 
         if (!data || data.length === 0) {
           setError("No questions available")
@@ -174,7 +245,7 @@ export default function TriviaGameContent() {
     setError(null)
 
     try {
-      const data = await fetchRandomTriviaQuestions(language, 5)
+      const data = await fetchTriviaFromWorker(language)
       if (!data || data.length === 0) {
         setError("No questions available")
         setLoading(false)

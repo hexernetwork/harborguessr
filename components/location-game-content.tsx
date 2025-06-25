@@ -7,7 +7,6 @@ import { ArrowLeft, RefreshCw, Ship, Info, Eye, EyeOff, Search, Anchor, RotateCc
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { saveLocationGameScore } from "@/lib/supabase-data"
-import { fetchHarborsFromWorker } from "@/lib/worker-data"
 import { 
   saveGameState, 
   loadGameState, 
@@ -26,6 +25,61 @@ import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/contexts/language-context"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
+
+// Fetch harbors from cached worker API
+async function fetchHarborsFromWorker(language) {
+  try {
+    const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL
+    
+    if (!workerUrl) {
+      throw new Error('NEXT_PUBLIC_WORKER_URL environment variable is not set')
+    }
+    
+    console.log(`🎯 Fetching harbors from worker cache: ${workerUrl}/harbors?lang=${language}`)
+    
+    const response = await fetch(`${workerUrl}/harbors?lang=${language}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Worker API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    console.log(`✅ Fetched ${data.length} harbors from worker cache (${response.headers.get('X-Cache') || 'UNKNOWN'})`)
+    
+    return data
+  } catch (error) {
+    console.error('❌ Error fetching harbors from worker:', error)
+    
+    // Fallback to direct Supabase query if worker fails
+    console.log('🔄 Falling back to direct Supabase query...')
+    const { data, error: supabaseError } = await supabase
+      .from("harbors")
+      .select(`
+        *,
+        harbor_hints!inner(hint_text, hint_order)
+      `)
+      .eq("language", language)
+      .order("view_count", { ascending: true })
+
+    if (supabaseError) {
+      console.error("Supabase fallback failed:", supabaseError)
+      return []
+    }
+
+    // Transform the data to include hints properly
+    return data.map(harbor => ({
+      ...harbor,
+      hints: harbor.harbor_hints
+        .sort((a, b) => a.hint_order - b.hint_order)
+        .map(hint => hint.hint_text)
+    }))
+  }
+}
 
 export default function LocationGameContent() {
   const { t, language } = useLanguage()
@@ -51,6 +105,14 @@ export default function LocationGameContent() {
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [gameCompleted, setGameCompleted] = useState(false) // Track if game is fully completed
   const [showFinalResults, setShowFinalResults] = useState(false) // Show final results modal
+
+  // Debug logging for auth state
+  useEffect(() => {
+    console.log("Auth state in location game:", { 
+      user: user?.id || "No user", 
+      loading: authLoading 
+    });
+  }, [user, authLoading]);
 
   // Helper: Get current harbor guesses and state
   const getCurrentHarborState = () => {
