@@ -39,6 +39,13 @@ const LANGUAGES = [
 // Cache service function
 const clearTriviaCache = async () => {
   try {
+    // Get current user session
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session?.access_token) {
+      throw new Error('Not authenticated');
+    }
+
     const response = await fetch(`${process.env.NEXT_PUBLIC_WORKER_URL}/cache/clear`, {
       method: 'POST',
       headers: {
@@ -46,7 +53,8 @@ const clearTriviaCache = async () => {
       },
       body: JSON.stringify({
         type: 'trivia',
-        adminToken: process.env.NEXT_PUBLIC_ADMIN_TOKEN
+        supabaseToken: session.access_token,
+        userId: session.user.id
       })
     });
 

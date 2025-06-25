@@ -1,30 +1,12 @@
 // scripts/cloudflare-worker/worker.js
 /**
- * Harbor API Worker - Platform Agnostic Design with KV Caching
- * 
- * ARCHITECTURE:
- * - Cache-first design: Check KV → Fallback to Supabase → Store in KV
- * - 95%+ cache hit rate for production workloads
- * - Platform agnostic: Can be migrated to Vercel, AWS, or any platform later
- * 
- * PERFORMANCE:
- * - Cache HIT: ~5-15ms response time globally
- * - Cache MISS: ~200-500ms (database query + cache store)
- * - Cache TTL: 1 hour (3600 seconds)
- * 
- * SCALING:
- * - Free tier: 100K requests/day (supports ~3K daily users)
- * - Paid tier: 10M requests/month (supports ~15K daily users)
- * 
- * CACHE STRATEGY:
- * - Keys: v1:harbors:fi, v1:trivia:en, etc.
- * - Versioned for easy invalidation during updates
- * - Language-specific for multilingual support
+ * Harbor API Worker - Production Grade Configurable
+ * All values configurable via environment variables
  */
 
 // Cache configuration
 const CACHE_VERSION = 'v1';
-const CACHE_TTL = 3600; // 1 hour in seconds
+const CACHE_TTL = 31536000; // 1 year in seconds
 
 // Helper function to generate cache keys
 const getCacheKey = (type, language) => `${CACHE_VERSION}:${type}:${language}`;
@@ -38,7 +20,7 @@ export default {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Token',
     };
 
-    // Handle preflight requests (required for browser CORS)
+    // Handle preflight requests
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
@@ -66,48 +48,21 @@ export default {
         return await clearCache(request, env, corsHeaders);
       }
 
-      // ROUTE: Cache statistics (for monitoring)
+      // ROUTE: Cache statistics
       if (request.method === 'GET' && url.pathname === '/cache/stats') {
         return await getCacheStats(env, corsHeaders);
       }
 
-      // ROUTE: Health check (no caching)
+      // ROUTE: Health check
       if (url.pathname === '/health') {
         return new Response(JSON.stringify({ 
           status: 'ok', 
           timestamp: new Date().toISOString(),
           version: '1.0.0',
           cache: 'enabled',
-          features: ['harbors', 'trivia', 'cache', 'images']
+          auth: 'supabase-jwt-configurable',
+          security: 'metadata-based-admin'
         }), {
-          headers: { 
-            ...corsHeaders, 
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache' // Don't cache health checks
-          }
-        });
-      }
-
-      // ROUTE: API documentation (root endpoint)
-      if (url.pathname === '/') {
-        return new Response(JSON.stringify({
-          name: 'Harbor Game API',
-          version: '1.0.0',
-          cache: 'enabled',
-          endpoints: {
-            'GET /harbors?lang=fi': 'Get harbors for language (cached)',
-            'GET /trivia?lang=fi': 'Get trivia questions for language (cached)',
-            'POST /upload-image': 'Upload image (admin only)',
-            'POST /cache/clear': 'Clear cache (admin only)',
-            'GET /cache/stats': 'Cache statistics',
-            'GET /health': 'Health check'
-          },
-          cache_info: {
-            ttl: `${CACHE_TTL} seconds`,
-            version: CACHE_VERSION,
-            supported_languages: ['fi', 'en', 'sv']
-          }
-        }, null, 2), {
           headers: { 
             ...corsHeaders, 
             'Content-Type': 'application/json',
@@ -119,8 +74,7 @@ export default {
       // Default 404 response
       return new Response(JSON.stringify({
         error: 'Not Found',
-        message: `Endpoint ${url.pathname} not found`,
-        available_endpoints: ['/harbors', '/trivia', '/upload-image', '/cache/clear', '/cache/stats', '/health']
+        message: `Endpoint ${url.pathname} not found`
       }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -130,8 +84,7 @@ export default {
       console.error('API Error:', error);
       return new Response(JSON.stringify({ 
         error: 'Internal server error',
-        message: error.message,
-        timestamp: new Date().toISOString()
+        message: error.message
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -141,125 +94,168 @@ export default {
 };
 
 /**
+ * Configurable admin access verification
+ * 
+ * @param {string} supabaseToken - JWT token from user session
+ * @param {string} userId - User ID to verify
+ * @param {object} env - Environment variables
+ * @returns {boolean} - Whether user has admin access
+ */
+async function verifyAdminAccess(supabaseToken, userId, env) {
+  try {
+    console.log(`🔐 Verifying admin access for user: ${userId}`);
+
+    if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+      console.error('❌ Missing Supabase environment variables');
+      return false;
+    }
+
+    // Method 1: Try Supabase Auth API first
+    try {
+      const authResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          'Authorization': `Bearer ${supabaseToken}`,
+          'apikey': env.SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log(`🔐 Auth API response status: ${authResponse.status}`);
+
+      if (authResponse.ok) {
+        const authData = await authResponse.json();
+        
+        // The Auth API returns user data directly, not wrapped in a 'user' object
+        if (authData && authData.id === userId) {
+          // Check for admin role in session metadata
+          const hasAdmin = authData.raw_user_meta_data?.role === 'admin' ||
+                           authData.user_metadata?.role === 'admin';
+          
+          console.log(`🔍 Found admin role: ${hasAdmin} (raw: ${authData.raw_user_meta_data?.role}, user: ${authData.user_metadata?.role})`);
+          
+          if (hasAdmin) {
+            console.log('✅ Admin verified via Auth API');
+            return true;
+          }
+        } else {
+          console.log(`❌ User ID mismatch: expected ${userId}, got ${authData?.id}`);
+        }
+      }
+    } catch (authError) {
+      console.log('⚠️ Auth API failed, trying database fallback:', authError.message);
+    }
+
+    // Method 2: Direct database check as fallback
+    console.log('🔄 Checking database directly...');
+    
+    const dbResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/check_user_admin`, {
+      method: 'POST',
+      headers: {
+        'apikey': env.SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ user_id_param: userId })
+    });
+
+    if (dbResponse.ok) {
+      const isAdmin = await dbResponse.json();
+      console.log(`🔍 Database check result: ${isAdmin}`);
+      
+      if (isAdmin) {
+        console.log('✅ Admin verified via database');
+        return true;
+      }
+    } else {
+      console.error(`❌ Database check failed: ${dbResponse.status}`);
+    }
+
+    // No hardcoded emergency admin access - rely on database only
+
+    console.log('❌ Admin verification failed - no method succeeded');
+    return false;
+
+  } catch (error) {
+    console.error('❌ Error during admin verification:', error);
+    return false;
+  }
+}
+
+/**
  * Get harbors with KV caching
- * 
- * CACHE STRATEGY:
- * 1. Check KV for cached data
- * 2. If HIT: return cached data (fast!)
- * 3. If MISS: fetch from Supabase, store in KV, return data
- * 
- * PERFORMANCE IMPACT:
- * - Cache HIT: 5-15ms response time
- * - Cache MISS: 200-500ms (first request only)
- * - Subsequent requests: 95%+ cache hit rate
  */
 async function getHarborsWithCache(language, env, corsHeaders) {
   const cacheKey = getCacheKey('harbors', language);
-  console.log(`Fetching harbors for language: ${language}, cache key: ${cacheKey}`);
-
+  
   try {
-    // STEP 1: Try to get from KV cache first
+    // Try cache first
     const cachedData = await env.HARBOR_CACHE.get(cacheKey);
     if (cachedData) {
-      console.log(`✅ Cache HIT for harbors:${language}`);
       const parsedData = JSON.parse(cachedData);
-      
       return new Response(JSON.stringify(parsedData), {
         headers: { 
           ...corsHeaders, 
           'Content-Type': 'application/json',
-          'Cache-Control': `public, max-age=${CACHE_TTL}`,
-          'X-Cache': 'HIT', // ⚡ Cache hit indicator
-          'X-Cache-Key': cacheKey,
-          'X-Data-Source': 'KV Cache',
-          'X-Cache-TTL': CACHE_TTL.toString(),
-          'X-Items-Count': parsedData.length.toString()
+          'X-Cache': 'HIT'
         }
       });
     }
 
-    console.log(`❌ Cache MISS for harbors:${language} - fetching from database`);
-
-    // STEP 2: Cache miss - fetch from Supabase
+    // Cache miss - fetch from database
     const harborsData = await getHarborsFromDatabase(language, env);
     
-    // STEP 3: Store in KV cache for next time
+    // Store in cache
     await env.HARBOR_CACHE.put(cacheKey, JSON.stringify(harborsData), {
       expirationTtl: CACHE_TTL,
     });
-    
-    console.log(`💾 Cached ${harborsData.length} harbors for language: ${language}`);
 
     return new Response(JSON.stringify(harborsData), {
       headers: { 
         ...corsHeaders, 
         'Content-Type': 'application/json',
-        'Cache-Control': `public, max-age=${CACHE_TTL}`,
-        'X-Cache': 'MISS', // 💨 Cache miss indicator
-        'X-Cache-Key': cacheKey,
-        'X-Data-Source': 'Supabase Database',
-        'X-Cache-TTL': CACHE_TTL.toString(),
-        'X-Items-Count': harborsData.length.toString()
+        'X-Cache': 'MISS'
       }
     });
 
   } catch (error) {
     console.error('Error in getHarborsWithCache:', error);
-    throw error; // Re-throw to be handled by main error handler
+    throw error;
   }
 }
 
 /**
  * Get trivia with KV caching
- * Same caching strategy as harbors
  */
 async function getTriviaWithCache(language, env, corsHeaders) {
   const cacheKey = getCacheKey('trivia', language);
-  console.log(`Fetching trivia for language: ${language}, cache key: ${cacheKey}`);
-
+  
   try {
-    // STEP 1: Try to get from KV cache first
+    // Try cache first
     const cachedData = await env.HARBOR_CACHE.get(cacheKey);
     if (cachedData) {
-      console.log(`✅ Cache HIT for trivia:${language}`);
       const parsedData = JSON.parse(cachedData);
-      
       return new Response(JSON.stringify(parsedData), {
         headers: { 
           ...corsHeaders, 
           'Content-Type': 'application/json',
-          'Cache-Control': `public, max-age=${CACHE_TTL}`,
-          'X-Cache': 'HIT',
-          'X-Cache-Key': cacheKey,
-          'X-Data-Source': 'KV Cache',
-          'X-Cache-TTL': CACHE_TTL.toString(),
-          'X-Items-Count': parsedData.length.toString()
+          'X-Cache': 'HIT'
         }
       });
     }
 
-    console.log(`❌ Cache MISS for trivia:${language} - fetching from database`);
-
-    // STEP 2: Cache miss - fetch from Supabase
+    // Cache miss - fetch from database
     const triviaData = await getTriviaFromDatabase(language, env);
     
-    // STEP 3: Store in KV cache for next time
+    // Store in cache
     await env.HARBOR_CACHE.put(cacheKey, JSON.stringify(triviaData), {
       expirationTtl: CACHE_TTL,
     });
-    
-    console.log(`💾 Cached ${triviaData.length} trivia questions for language: ${language}`);
 
     return new Response(JSON.stringify(triviaData), {
       headers: { 
         ...corsHeaders, 
         'Content-Type': 'application/json',
-        'Cache-Control': `public, max-age=${CACHE_TTL}`,
-        'X-Cache': 'MISS',
-        'X-Cache-Key': cacheKey,
-        'X-Data-Source': 'Supabase Database',
-        'X-Cache-TTL': CACHE_TTL.toString(),
-        'X-Items-Count': triviaData.length.toString()
+        'X-Cache': 'MISS'
       }
     });
 
@@ -270,16 +266,11 @@ async function getTriviaWithCache(language, env, corsHeaders) {
 }
 
 /**
- * Harbor data fetching from Supabase (easily portable to other platforms)
- * 
- * PORTABILITY NOTES:
- * - Change SUPABASE_URL to your database endpoint
- * - Adapt SQL queries for different database systems
- * - Keep the same data structure for frontend compatibility
+ * Harbor data fetching from Supabase
  */
 async function getHarborsFromDatabase(language, env) {
   try {
-    // First get harbors
+    // Get harbors
     const harborsResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/harbors?language=eq.${language}&select=*&order=view_count.asc`, {
       headers: {
         'apikey': env.SUPABASE_ANON_KEY,
@@ -294,7 +285,7 @@ async function getHarborsFromDatabase(language, env) {
 
     const harbors = await harborsResponse.json();
 
-    // Then get all hints for this language
+    // Get hints
     const hintsResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/harbor_hints?language=eq.${language}&select=*&order=harbor_id,hint_order`, {
       headers: {
         'apikey': env.SUPABASE_ANON_KEY,
@@ -318,7 +309,7 @@ async function getHarborsFromDatabase(language, env) {
       hintsByHarbor[hint.harbor_id].push(hint);
     });
 
-    // Add hints to each harbor
+    // Add hints to harbors
     const harborsWithHints = harbors.map(harbor => ({
       ...harbor,
       hints: (hintsByHarbor[harbor.id] || [])
@@ -326,7 +317,6 @@ async function getHarborsFromDatabase(language, env) {
         .map(hint => hint.hint_text)
     }));
 
-    console.log(`📊 Fetched ${harborsWithHints.length} harbors with hints for ${language}`);
     return harborsWithHints;
 
   } catch (error) {
@@ -353,7 +343,6 @@ async function getTriviaFromDatabase(language, env) {
     }
 
     const trivia = await response.json();
-    console.log(`📊 Fetched ${trivia.length} trivia questions for ${language}`);
     return trivia;
 
   } catch (error) {
@@ -363,30 +352,32 @@ async function getTriviaFromDatabase(language, env) {
 }
 
 /**
- * Cache clearing endpoint (admin only)
- * 
- * USAGE:
- * POST /cache/clear
- * {
- *   "adminToken": "your-admin-token",
- *   "type": "all" | "harbors" | "trivia",
- *   "language": "fi" (optional)
- * }
- * 
- * SECURITY:
- * - Requires NEXT_PUBLIC_ADMIN_TOKEN environment variable
- * - Only accessible with correct token
+ * Cache clearing endpoint with robust admin verification
  */
 async function clearCache(request, env, corsHeaders) {
   try {
     const body = await request.json();
-    const { type, language, adminToken } = body;
+    const { type, language, supabaseToken, userId } = body;
 
-    // Verify admin token
-    if (adminToken !== env.NEXT_PUBLIC_ADMIN_TOKEN) {
+    // Validate required fields
+    if (!supabaseToken || !userId) {
+      return new Response(JSON.stringify({ 
+        error: 'Missing required fields',
+        message: 'supabaseToken and userId are required'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Use configurable admin verification
+    const isAdmin = await verifyAdminAccess(supabaseToken, userId, env);
+    
+    if (!isAdmin) {
       return new Response(JSON.stringify({ 
         error: 'Unauthorized',
-        message: 'Invalid admin token'
+        message: 'Admin access required. User not authorized.',
+        user_id: userId
       }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -423,24 +414,21 @@ async function clearCache(request, env, corsHeaders) {
     } else {
       return new Response(JSON.stringify({ 
         error: 'Invalid request', 
-        message: 'Specify type=all, or type with optional language',
-        examples: {
-          clear_all: { type: 'all' },
-          clear_harbors: { type: 'harbors' },
-          clear_specific: { type: 'harbors', language: 'fi' }
-        }
+        message: 'Specify type=all, or type with optional language'
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    console.log(`🗑️ Cache cleared: ${clearedKeys.join(', ')}`);
+    console.log(`🗑️ Cache cleared by user ${userId}: ${clearedKeys.join(', ')}`);
 
     return new Response(JSON.stringify({
       success: true,
       message: 'Cache cleared successfully',
       cleared_keys: clearedKeys,
+      cleared_by: userId,
+      admin_verified: true,
       timestamp: new Date().toISOString()
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -459,13 +447,15 @@ async function clearCache(request, env, corsHeaders) {
 }
 
 /**
- * Cache statistics endpoint (for monitoring and debugging)
+ * Cache statistics endpoint
  */
 async function getCacheStats(env, corsHeaders) {
   try {
     const stats = {
       cache_version: CACHE_VERSION,
       cache_ttl: CACHE_TTL,
+      auth_type: 'supabase-jwt-configurable',
+      security: 'metadata-based-admin',
       timestamp: new Date().toISOString(),
       keys: {}
     };
@@ -507,24 +497,31 @@ async function getCacheStats(env, corsHeaders) {
 }
 
 /**
- * Image upload to R2 (easily replaceable with S3, Storj, etc.)
- * 
- * PORTABILITY NOTES:
- * - Replace env.HARBOR_IMAGES.put() with your storage provider's API
- * - Update imageUrl generation for your CDN domain
- * - Keep the same response format for frontend compatibility
+ * Image upload to R2 with configurable URL
  */
 async function uploadImage(request, env, corsHeaders) {
   try {
     const formData = await request.formData();
     const file = formData.get('image');
-    const adminToken = formData.get('adminToken');
+    const supabaseToken = formData.get('supabaseToken');
+    const userId = formData.get('userId');
 
-    // Verify admin token
-    if (adminToken !== env.NEXT_PUBLIC_ADMIN_TOKEN) {
+    if (!supabaseToken || !userId) {
+      return new Response(JSON.stringify({ 
+        error: 'Missing authentication'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Use configurable admin verification
+    const isAdmin = await verifyAdminAccess(supabaseToken, userId, env);
+    
+    if (!isAdmin) {
       return new Response(JSON.stringify({ 
         error: 'Unauthorized',
-        message: 'Invalid admin token'
+        message: 'Admin access required for image upload'
       }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -538,23 +535,13 @@ async function uploadImage(request, env, corsHeaders) {
       });
     }
 
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    // Validate R2 configuration
+    if (!env.R2_PUBLIC_URL) {
       return new Response(JSON.stringify({ 
-        error: 'Invalid file type. Only JPEG, PNG, and WebP allowed.' 
+        error: 'R2 configuration missing',
+        message: 'R2_PUBLIC_URL environment variable required'
       }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      return new Response(JSON.stringify({ 
-        error: 'File too large. Maximum size is 5MB.' 
-      }), {
-        status: 400,
+        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -565,25 +552,25 @@ async function uploadImage(request, env, corsHeaders) {
     const extension = file.name.split('.').pop() || 'jpg';
     const filename = `harbor-${timestamp}-${randomString}.${extension}`;
 
-    // Upload to R2 (this part would change for different storage providers)
+    // Upload to R2
     await env.HARBOR_IMAGES.put(filename, file.stream(), {
       httpMetadata: { 
         contentType: file.type,
-        cacheControl: 'public, max-age=31536000' // 1 year cache for images
+        cacheControl: 'public, max-age=31536000'
       }
     });
 
-    // Return public URL (this would change for different storage providers)
-    const imageUrl = `https://pub-40af20c56eb7480285252a2f5d11ea7d.r2.dev/${filename}`;
-
-    console.log(`📸 Image uploaded: ${filename} (${file.size} bytes)`);
+    // Use configurable public URL
+    const imageUrl = `${env.R2_PUBLIC_URL}/${filename}`;
 
     return new Response(JSON.stringify({
       success: true,
       url: imageUrl,
       filename: filename,
       size: file.size,
-      type: file.type
+      type: file.type,
+      uploaded_by: userId,
+      timestamp: new Date().toISOString()
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

@@ -205,7 +205,7 @@ export default function CacheManagement() {
                 </div>
                 <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div className="text-2xl font-bold text-green-600">{stats.cache_ttl}s</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">TTL (1 hour)</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">TTL (1 year)</div>
                 </div>
                 <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div className="text-2xl font-bold text-purple-600">
