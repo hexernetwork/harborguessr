@@ -168,10 +168,9 @@ CREATE TABLE leaderboard_entries (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   -- Ensure we don't have duplicate entries for the same game
   UNIQUE (game_score_id),
-  -- Constraint to ensure either user_id or session_id+nickname is provided
+  -- Constraint to ensure we have some form of identification
   CONSTRAINT check_user_identification CHECK (
-    (user_id IS NOT NULL AND session_id IS NULL AND nickname IS NULL) OR
-    (user_id IS NULL AND session_id IS NOT NULL AND nickname IS NOT NULL)
+    user_id IS NOT NULL OR (session_id IS NOT NULL AND nickname IS NOT NULL)
   )
 );
 
@@ -815,7 +814,8 @@ CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_score ON leaderboard_entries(
 CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_completed_at ON leaderboard_entries(completed_at);
 CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_user_id ON leaderboard_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_session_id ON leaderboard_entries(session_id);
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_weekly ON leaderboard_entries(language, game_type, completed_at) WHERE completed_at >= NOW() - INTERVAL '7 days';
+-- Skip the partial index with NOW() - PostgreSQL doesn't allow non-immutable functions in index predicates
+-- CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_weekly ON leaderboard_entries(language, game_type, completed_at) WHERE completed_at >= NOW() - INTERVAL '7 days';
 CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_ranking ON leaderboard_entries(language, game_type, score DESC, accuracy_percentage DESC, game_duration_seconds ASC);
 
 -- ===================================================================
