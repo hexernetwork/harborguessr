@@ -40,6 +40,7 @@ const fi = {
     home: "Etusivu",
     locationGame: "Sijaintipeli",
     triviaGame: "Tietovisa",
+    leaderboard: "Tulostaulu",
     about: "Tietoa",
     howToPlay: "Kuinka pelata",
     profile: "Profiili",
@@ -51,6 +52,7 @@ const fi = {
   },
   home: {
     title: "Suomen Satama-arvaaja",
+    titleShort: "Satama-arvaaja",
     subtitle: "Navigoi merikartoilla ja löydä satamia ympäri Suomea",
     locationGameTitle: "Sataman sijaintiarvaaja",
     locationGameDescription:
@@ -85,6 +87,8 @@ const fi = {
     correctMessage: "Hienoa työtä! Löysit sataman {harborName}. Sait {score} pistettä.",
     outOfGuesses: "Arvaukset loppuivat! Oikea sijainti oli {harborName}.",
     distanceAway: "Arvauksesi oli {distance} km päässä. Yritä uudelleen! ({guessesLeft} arvausta jäljellä)",
+    distance: "Etäisyys",
+    guess: "Arvaus",
     finalScore: "Peli päättyi! Lopullinen pistemäärä: {score}",
     harbor: "Satama",
     region: "Alue",
@@ -330,6 +334,66 @@ const fi = {
     invalidLocation: "Virheellinen sijainti valittu.",
     noDataAvailable: "Tietoja ei ole saatavilla tälle pyynnölle.",
     loadingError: "Virhe tietojen lataamisessa. Yritä uudelleen.",
+  },
+
+  leaderboard: {
+  nicknamePrompt: "Haluatko näkyä tulostaululla?",
+  nicknameDescription: "Anna nimimerkki näyttääksesi tulostaululla:",
+  description: "Kilpaile pelaajien kanssa ympäri maailmaa! Suorita sijainti- ja tietovisapelejä nostaaksesi rankingissasi. Rekisteröityneet käyttäjät näkyvät vahvistetuilla merkeillä, kun taas anonymit pelaajat voivat silti kilpailla nimimerkeillä.",
+  nicknamePlaceholder: "Nimimerkkisi",
+  skipLeaderboard: "Ohita",
+  title: "Tulostaulu",
+  weeklyTab: "Tämä viikko",
+  allTimeTab: "Kaiken aikain",
+  noResults: "Ei tuloksia vielä",
+  rank: "Sija",
+  player: "Pelaaja",
+  score: "Pisteet",
+  accuracy: "Tarkkuus",
+  duration: "Kesto",
+  registered: "Rekisteröitynyt",
+  anonymous: "Anonyymi",
+  yourStats: "Omat tuloksesi",
+  gamesPlayed: "Pelit",
+  weeklyRank: "Viikko",
+  allTimeRank: "Kaiken aikain",
+  locationGame: "Sijainti",
+  triviaGame: "Trivia",
+  noDataYet: "Ei pelejä vielä pelattu",
+  locationGame: "Sijaintipeli",
+  triviaGame: "Tietovisa", 
+  weeklyLeaders: "Viikon parhaat",
+  accuracy: "Tarkkuus",
+  duration: "Kesto",
+  score: "Pisteet",
+  points: "pistettä"
+  },
+  gameResults: {
+    gameComplete: "Peli päättynyt!",
+    finalScore: "Loppupisteet",
+    correctAnswers: "Oikeat vastaukset",
+    totalAttempts: "Yhteensä yrityksiä",
+    excellentPerformance: "🎉 Erinomainen suoritus!",
+    goodJob: "👍 Hyvää työtä!",
+    notBad: "👌 Ei hassumpi!",
+    practiceMore: "🎯 Harjoitus tekee mestarin!",
+    playAgain: "Pelaa uudelleen",
+    accuracy: "Tarkkuus",
+    duration: "Kesto",
+    score: "Pisteet",
+    questionsCorrect: "Oikeita vastauksia",
+    outOf: "/",
+    seeLeaderboard: "Katso tulostaulua"
+  },
+
+  gameRestore: {
+    savedGameFound: "Löydettiin tallennettu peli",
+    savedGameDescription: "Haluatko jatkaa keskenjäänyttä peliä vai aloittaa uuden?",
+    continueGame: "Jatka peliä",
+    startNewGame: "Aloita uusi peli"
+  },
+  gameSuccess: {
+   correct: "Oikein meni!"
   },
 }
 

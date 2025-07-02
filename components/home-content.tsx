@@ -18,6 +18,7 @@ export default function HomeContent() {
 
     // Fallback translations for critical UI elements
     if (key === "home.title") return "Finnish Harbor Guesser"
+    if (key === "home.titleShort") return "Harbor Guesser"
     if (key === "home.subtitle") return "Navigate the nautical charts to find harbors across Finland"
     if (key === "home.locationGameTitle") return "Harbor Location Guesser"
     if (key === "home.locationGameDescription")
@@ -46,28 +47,41 @@ export default function HomeContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-blue-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="container mx-auto px-4 py-16">
-        <header className="text-center mb-16">
+      <div className="container mx-auto px-4 py-8 sm:py-16">
+        <header className="text-center mb-12 sm:mb-16">
           <div className="flex justify-center mb-4">
             <div className="relative">
-              <Ship className="h-16 w-16 text-blue-600 dark:text-blue-400" />
-              <Anchor className="h-8 w-8 text-blue-500 dark:text-blue-300 absolute -bottom-2 -right-2" />
+              <Ship className="h-12 w-12 sm:h-16 sm:w-16 text-blue-600 dark:text-blue-400" />
+              <Anchor className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500 dark:text-blue-300 absolute -bottom-2 -right-2" />
             </div>
           </div>
-          <h1 className="text-4xl md:text-6xl font-bold text-slate-800 dark:text-white mb-4">{t("home.title")}</h1>
-          <p className="text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">{t("home.subtitle")}</p>
+          <h1 className="text-2xl sm:text-4xl md:text-6xl font-bold text-slate-800 dark:text-white mb-4 leading-tight">
+            <span className="block sm:hidden">
+              {t("home.titleShort")}
+            </span>
+            <span className="hidden sm:block">
+              {t("home.title")}
+            </span>
+          </h1>
+          <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto px-4">
+            {t("home.subtitle")}
+          </p>
         </header>
 
-        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden transition-transform hover:scale-105">
-            <div className="h-48 bg-blue-500 relative overflow-hidden">
+            <div className="h-40 sm:h-48 bg-blue-500 relative overflow-hidden">
               <div className="absolute inset-0 flex items-center justify-center">
-                <Navigation className="h-20 w-20 text-white opacity-50" />
+                <Navigation className="h-16 w-16 sm:h-20 sm:w-20 text-white opacity-50" />
               </div>
             </div>
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">{t("home.locationGameTitle")}</h2>
-              <p className="text-slate-600 dark:text-slate-300 mb-6">{t("home.locationGameDescription")}</p>
+            <div className="p-4 sm:p-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white mb-2">
+                {t("home.locationGameTitle")}
+              </h2>
+              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 mb-4 sm:mb-6">
+                {t("home.locationGameDescription")}
+              </p>
               <Link href="/location-game">
                 <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                   {t("home.playLocationGame")}
@@ -77,31 +91,39 @@ export default function HomeContent() {
           </div>
 
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden transition-transform hover:scale-105">
-            <div className="h-48 bg-teal-500 relative overflow-hidden">
+            <div className="h-40 sm:h-48 bg-teal-500 relative overflow-hidden">
               <div className="absolute inset-0 flex items-center justify-center">
-                <Compass className="h-20 w-20 text-white opacity-50" />
+                <Compass className="h-16 w-16 sm:h-20 sm:w-20 text-white opacity-50" />
               </div>
             </div>
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">{t("home.triviaGameTitle")}</h2>
-              <p className="text-slate-600 dark:text-slate-300 mb-6">{t("home.triviaGameDescription")}</p>
+            <div className="p-4 sm:p-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white mb-2">
+                {t("home.triviaGameTitle")}
+              </h2>
+              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 mb-4 sm:mb-6">
+                {t("home.triviaGameDescription")}
+              </p>
               <Link href="/trivia-game">
-                <Button className="w-full bg-teal-600 hover:bg-teal-700 text-white">{t("home.playTriviaGame")}</Button>
+                <Button className="w-full bg-teal-600 hover:bg-teal-700 text-white">
+                  {t("home.playTriviaGame")}
+                </Button>
               </Link>
             </div>
           </div>
         </div>
 
-        <div className="mt-16 text-center">
-          <p className="text-slate-600 dark:text-slate-400 mb-4">{t("home.footer")}</p>
-          <div className="flex justify-center gap-4">
+        <div className="mt-12 sm:mt-16 text-center">
+          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mb-4 px-4">
+            {t("home.footer")}
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-4 px-4">
             <Link href="/about">
-              <Button variant="outline" className="border-slate-300 dark:border-slate-700">
+              <Button variant="outline" className="w-full sm:w-auto border-slate-300 dark:border-slate-700">
                 {t("navigation.about")}
               </Button>
             </Link>
             <Link href="/how-to-play">
-              <Button variant="outline" className="border-slate-300 dark:border-slate-700">
+              <Button variant="outline" className="w-full sm:w-auto border-slate-300 dark:border-slate-700">
                 {t("navigation.howToPlay")}
               </Button>
             </Link>
