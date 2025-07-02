@@ -238,8 +238,6 @@ export default function MapComponent({
             <div class="p-2">
               <h3 class="font-bold">${t("locationGame.guess")} ${attemptNumber}</h3>
               <p class="text-xs mt-1">${t("locationGame.distance")}: ${Math.round(guess.distance)}km</p>
-              <p class="text-xs mt-1">${t("locationGame.score")}: ${guess.score}</p>
-              <p class="text-xs mt-1">${isCorrect ? t("locationGame.correct") : t("locationGame.incorrect")}</p>
             </div>
           `)
           guessMarkersRef.current.push(marker)

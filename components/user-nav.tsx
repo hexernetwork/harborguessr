@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
+import { Trophy } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
@@ -108,6 +109,10 @@ export default function UserNav() {
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => router.push("/profile")}>
             {t("navigation.profile")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/leaderboard")}>
+            <Trophy className="h-4 w-4 mr-2" />
+            {t("navigation.leaderboard")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push("/profile/settings")}>
             {t("navigation.settings")}
