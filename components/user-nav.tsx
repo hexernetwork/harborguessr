@@ -22,9 +22,12 @@ export default function UserNav() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [mounted, setMounted] = useState(false);
   const { t } = useLanguage() || { t: (k) => k };
 
   useEffect(() => {
+    setMounted(true);
+    
     // Get initial session
     const getInitialSession = async () => {
       try {
@@ -61,7 +64,6 @@ export default function UserNav() {
       
       if (error) {
         console.error("UserNav: Sign out error:", error);
-        // Still redirect even if there's an error, as the user might be logged out locally
       } else {
         console.log("UserNav: Sign out successful");
       }
@@ -79,29 +81,47 @@ export default function UserNav() {
     }
   };
 
-  // Don't render if no user
-  if (!user) {
+  // Don't render anything until mounted to avoid hydration issues
+  if (!mounted) {
     return null;
   }
 
+  // If no user, show login button
+  if (!user) {
+    return (
+      <Button 
+        variant="outline" 
+        size="sm" 
+        className="text-xs sm:text-sm px-2 sm:px-3"
+        onClick={() => router.push("/login")}
+      >
+        {t("navigation.signIn")}
+      </Button>
+    );
+  }
+
+  // If user is logged in, show avatar dropdown
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="h-8 w-8 rounded-full">
           <Avatar className="h-8 w-8">
-            {user?.user_metadata?.avatar_url ? (
+            {user?.user_metadata?.avatar_url && (
               <AvatarImage src={user.user_metadata.avatar_url} alt="User" />
-            ) : (
-              <AvatarImage src="/abstract-geometric-shapes.png" alt="User" />
             )}
-            <AvatarFallback>{user?.email?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+            <AvatarFallback className="bg-blue-600 text-white text-sm font-medium">
+              {user?.user_metadata?.username?.charAt(0)?.toUpperCase() || 
+               user?.email?.charAt(0)?.toUpperCase() || "U"}
+            </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end">
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium">{user?.user_metadata?.username || "User"}</p>
+            <p className="text-sm font-medium">
+              {user?.user_metadata?.username || user?.user_metadata?.display_name || "User"}
+            </p>
             <p className="text-xs text-muted-foreground">{user?.email}</p>
           </div>
         </DropdownMenuLabel>
@@ -120,7 +140,7 @@ export default function UserNav() {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} disabled={isLoading}>
-          {isLoading ? "Signing out..." : t("navigation.signOut")}
+          {isLoading ? t("common.signingOut") : t("navigation.signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -9,43 +9,15 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import UserNav from "@/components/user-nav";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase"; // Use singleton instance
 import { useLanguage } from "@/contexts/language-context";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function Header() {
-  const [isClient, setIsClient] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { t, language, setLanguage } = useLanguage() || { t: (k) => k, language: "en", setLanguage: () => {} };
 
   useEffect(() => {
     setMounted(true);
-    setIsClient(true);
-    
-    const checkAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) {
-          console.error("Error getting session in header:", error);
-        }
-        setIsLoggedIn(!!session);
-        console.log('Header initial auth check:', session?.user?.id || 'No user');
-      } catch (error) {
-        console.error("Error in checkAuth header:", error);
-      }
-    };
-    
-    checkAuth();
-
-    // Add auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Header auth state changed:', event, session?.user?.id || 'No user');
-      setIsLoggedIn(!!session);
-    });
-
-    // Cleanup subscription on unmount
-    return () => subscription.unsubscribe();
   }, []);
 
   const renderInlineLanguageSelector = () => {
@@ -115,15 +87,9 @@ export default function Header() {
         <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {renderInlineLanguageSelector()}
           <ThemeToggle />
-          {isClient && isLoggedIn ? (
-            <UserNav />
-          ) : (
-            <Link href="/login">
-              <Button variant="outline" size="sm" className="hidden xs:flex text-xs sm:text-sm px-2 sm:px-3">
-                {language === "fi" ? "Kirjaudu" : "Sign In"}
-              </Button>
-            </Link>
-          )}
+          
+          {/* UserNav handles both logged in and logged out states */}
+          {mounted && <UserNav />}
           
           {/* Mobile Menu */}
           <Sheet>
@@ -134,41 +100,39 @@ export default function Header() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-64 sm:w-72">
-              <nav className="flex flex-col gap-4 mt-8">
-                <Link href="/location-game">
-                  <Button variant="ghost" className="w-full justify-start">
-                    {t("navigation.locationGame")}
-                  </Button>
-                </Link>
-                <Link href="/trivia-game">
-                  <Button variant="ghost" className="w-full justify-start">
-                    {t("navigation.triviaGame")}
-                  </Button>
-                </Link>
-                <Link href="/leaderboard">
-                  <Button variant="ghost" className="w-full justify-start">
-                    <Trophy className="h-4 w-4 mr-2" />
-                    {t("navigation.leaderboard")}
-                  </Button>
-                </Link>
-                <Link href="/about">
-                  <Button variant="ghost" className="w-full justify-start">
-                    {t("navigation.about")}
-                  </Button>
-                </Link>
-                <Link href="/how-to-play">
-                  <Button variant="ghost" className="w-full justify-start">
-                    {t("navigation.howToPlay")}
-                  </Button>
-                </Link>
-                {!isLoggedIn && (
-                  <Link href="/login">
-                    <Button variant="outline" className="w-full justify-start">
-                      {language === "fi" ? "Kirjaudu sisään" : "Sign In"}
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between pb-4 border-b">
+                  <h2 className="text-lg font-semibold">{t("navigation.toggleMenu")}</h2>
+                </div>
+                <nav className="flex flex-col gap-4 mt-8 flex-1">
+                  <Link href="/location-game">
+                    <Button variant="ghost" className="w-full justify-start">
+                      {t("navigation.locationGame")}
                     </Button>
                   </Link>
-                )}
-              </nav>
+                  <Link href="/trivia-game">
+                    <Button variant="ghost" className="w-full justify-start">
+                      {t("navigation.triviaGame")}
+                    </Button>
+                  </Link>
+                  <Link href="/leaderboard">
+                    <Button variant="ghost" className="w-full justify-start">
+                      <Trophy className="h-4 w-4 mr-2" />
+                      {t("navigation.leaderboard")}
+                    </Button>
+                  </Link>
+                  <Link href="/about">
+                    <Button variant="ghost" className="w-full justify-start">
+                      {t("navigation.about")}
+                    </Button>
+                  </Link>
+                  <Link href="/how-to-play">
+                    <Button variant="ghost" className="w-full justify-start">
+                      {t("navigation.howToPlay")}
+                    </Button>
+                  </Link>
+                </nav>
+              </div>
             </SheetContent>
           </Sheet>
         </div>
