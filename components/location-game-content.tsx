@@ -1,4 +1,4 @@
-// components/location-game-content.tsx
+// components/location-game-content.tsx - TESTING VERSION WITH ELISAARI ONLY
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -32,7 +32,6 @@ import LocationGameResultsModal from "@/components/game/location-game-results-mo
 import GameSuccessModal from "@/components/game/game-success-modal"
 import GameRestorePrompt from "@/components/game/game-restore-prompt"
 
-// Fetch harbors from cached worker API
 async function fetchHarborsFromWorker(language) {
   try {
     const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL
@@ -41,7 +40,7 @@ async function fetchHarborsFromWorker(language) {
       throw new Error('NEXT_PUBLIC_WORKER_URL environment variable is not set')
     }
     
-    console.log(`🎯 Fetching harbors from worker cache: ${workerUrl}/harbors?lang=${language}`)
+    console.log(`Fetching harbors from worker cache: ${workerUrl}/harbors?lang=${language}`)
     
     const response = await fetch(`${workerUrl}/harbors?lang=${language}`, {
       method: 'GET',
@@ -55,14 +54,14 @@ async function fetchHarborsFromWorker(language) {
     }
 
     const data = await response.json()
-    console.log(`✅ Fetched ${data.length} harbors from worker cache (${response.headers.get('X-Cache') || 'UNKNOWN'})`)
+    console.log(`Fetched ${data.length} harbors from worker cache (${response.headers.get('X-Cache') || 'UNKNOWN'})`)
     
     return data
   } catch (error) {
-    console.error('❌ Error fetching harbors from worker:', error)
+    console.error('Error fetching harbors from worker:', error)
     
     // Fallback to direct Supabase query if worker fails
-    console.log('🔄 Falling back to direct Supabase query...')
+    console.log('Falling back to direct Supabase query...')
     const { data, error: supabaseError } = await supabase
       .from("harbors")
       .select(`
@@ -167,17 +166,6 @@ export default function LocationGameContent() {
 
   const initializeGame = async () => {
     try {
-      const savedGame = loadGameState()
-      console.log("Checking for saved game:", savedGame)
-      
-      if (savedGame && savedGame.gameStarted && savedGame.gameHistory && savedGame.gameHistory.length > 0) {
-        console.log("Found saved game with guesses, showing restore prompt")
-        setShowRestorePrompt(true)
-        setLoading(false)
-        return
-      }
-      
-      console.log("Starting fresh game")
       clearGameState()
       await loadGameData()
       
@@ -189,30 +177,16 @@ export default function LocationGameContent() {
 
   const loadGameData = async (savedGame = null) => {
     try {
-      let data = loadCachedHarborData(language)
-      
-      if (!data) {
-        data = await fetchHarborsFromWorker(language)
-        if (data && data.length > 0) {
-          saveHarborData(data, language)
-        }
-      }
+      const data = await fetchHarborsFromWorker(language)
       
       if (data && data.length > 0) {
         const correctLanguageHarbors = data.filter(harbor => harbor.language === language)
         const finalHarbors = correctLanguageHarbors.length > 0 ? correctLanguageHarbors : data
         
         setHarbors(finalHarbors)
-        
-        if (savedGame && savedGame.currentHarbor) {
-          console.log("Restoring saved game...")
-          restoreGameState(savedGame)
-        } else {
-          console.log("Starting fresh game...")
-          selectRandomHarbor(finalHarbors)
-          setGameStarted(true)
-          setGameStartTime(Date.now())
-        }
+        selectRandomHarbor(finalHarbors)
+        setGameStarted(true)
+        setGameStartTime(Date.now())
       }
     } catch (error) {
       console.error("Error loading game data:", error)
@@ -222,87 +196,15 @@ export default function LocationGameContent() {
     }
   }
 
-  const restoreGameState = (savedGame) => {
-    console.log("Restoring game state:", savedGame)
-    
-    setCurrentHarbor(savedGame.currentHarbor)
-    setHarbors(savedGame.harbors || [])
-    setScore(savedGame.score || 0)
-    setRound(savedGame.round || 1)
-    setSessionId(savedGame.sessionId || sessionId)
-    setGameHistory(savedGame.gameHistory || [])
-    setGameStarted(true)
-    setGameCompleted(savedGame.gameCompleted || false)
-    setGameStartTime(savedGame.gameStartTime || Date.now())
-    
-    console.log("Restored game history:", savedGame.gameHistory?.length || 0, "guesses")
-    
-    if (savedGame.gameCompleted) {
-      setFeedback({
-        type: "info",
-        message: t("triviaGame.finalScore", { score: savedGame.score || 0 })
-      })
-      return
-    }
-    
-    if (savedGame.currentHarbor && savedGame.gameHistory) {
-      const currentGuesses = savedGame.gameHistory.filter(guess => guess.harborId === savedGame.currentHarbor.id)
-      const hasCorrectAnswer = currentGuesses.some(guess => guess.correct)
-      
-      if (hasCorrectAnswer) {
-        const correctGuess = currentGuesses.find(g => g.correct)
-        setFeedback({
-          type: "success",
-          message: t("locationGame.correctMessage", { 
-            harborName: savedGame.currentHarbor.name, 
-            score: correctGuess?.score || 0
-          })
-        })
-      } else if (currentGuesses.length >= 5) {
-        setFeedback({
-          type: "error",
-          message: t("locationGame.outOfGuesses", { harborName: savedGame.currentHarbor.name })
-        })
-      } else if (currentGuesses.length > 0) {
-        setFeedback({
-          type: "info",
-          message: t("gameRestore.continueGame") + ` - ${currentGuesses.length} ${t("locationGame.guessesRemaining")}`
-        })
-      }
-    }
-  }
-
-  const restoreSavedGame = () => {
-    const savedGame = loadGameState()
-    console.log("Restoring saved game:", savedGame)
-    if (savedGame) {
-      loadGameData(savedGame)
-    }
-    setShowRestorePrompt(false)
-  }
-
-  const startNewGame = () => {
-    console.log("Starting new game, clearing localStorage")
-    clearGameState()
-    setShowRestorePrompt(false)
-    setGameHistory([])
-    setGameCompleted(false)
-    setGameStartTime(Date.now())
-    loadGameData()
-  }
-
   const selectRandomHarbor = (harborList) => {
     if (!harborList || harborList.length === 0) return
 
-    const randomIndex = Math.floor(Math.random() * harborList.length)
-    const harbor = harborList[randomIndex]
+    const harbor = harborList[Math.floor(Math.random() * harborList.length)]
     
     setCurrentHarbor(harbor)
     setSelectedLocation(null)
     setFeedback(null)
 
-    console.log(`Selected harbor: ${harbor.name} (ID: ${harbor.id})`)
-    
     if (!gameStartTime && gameStarted) {
       setGameStartTime(Date.now())
     }
@@ -533,17 +435,6 @@ export default function LocationGameContent() {
     }
   }
 
-  // Show restore prompt with proper translations
-  if (showRestorePrompt) {
-    return (
-      <GameRestorePrompt
-        show={showRestorePrompt}
-        onRestore={restoreSavedGame}
-        onStartNew={startNewGame}
-      />
-    )
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
@@ -560,7 +451,6 @@ export default function LocationGameContent() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-6 lg:py-8">
-        {/* Mobile-first header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
           <Link href="/">
             <Button variant="ghost" size="sm" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
@@ -582,9 +472,7 @@ export default function LocationGameContent() {
           </div>
         </div>
 
-        {/* Mobile-first layout - Proper scrollable design */}
         <div className="space-y-4 lg:grid lg:grid-cols-3 lg:gap-6 lg:space-y-0">
-          {/* Controls Panel - Full width on mobile, scrollable */}
           <Card className="lg:col-span-1">
             <CardContent className="p-3 sm:p-4">
               <div className="flex items-center gap-2 mb-3 sm:mb-4">
@@ -592,7 +480,6 @@ export default function LocationGameContent() {
                 <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-800 dark:text-white truncate">{t("locationGame.title")}</h2>
               </div>
 
-              {/* Game Status - Always visible on mobile */}
               <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                 <div className="flex justify-between items-center text-sm">
                   <span className="font-medium text-blue-800 dark:text-blue-300">
@@ -629,7 +516,6 @@ export default function LocationGameContent() {
                 </Alert>
               )}
 
-              {/* Hints - Compact on mobile */}
               <div className="mb-3 sm:mb-4">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400">{t("locationGame.hints")}:</h3>
@@ -639,26 +525,77 @@ export default function LocationGameContent() {
                 </div>
                 <Progress value={(currentState.currentHintIndex + 1) * 20} className="h-1 mb-2 sm:mb-3" />
                 <div className="space-y-1 sm:space-y-2">
-                  {currentHarbor?.hints?.map((hint, index) => (
-                    <div
-                      key={index}
-                      className={`p-1.5 sm:p-2 rounded-md border text-xs sm:text-sm ${
-                        index <= currentState.currentHintIndex || currentState.isComplete
-                          ? "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                          : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-400"
-                      }`}
-                    >
-                      <p>
-                        {index <= currentState.currentHintIndex || currentState.isComplete 
-                          ? hint 
-                          : t("locationGame.hintLocked", { number: index + 1 })}
-                      </p>
-                    </div>
-                  ))}
+                  {[0, 1, 2, 3, 4].map((hintIndex) => {
+                    const isVisible = hintIndex <= currentState.currentHintIndex || currentState.isComplete;
+                    
+                    if (hintIndex === 2) {
+                      return (
+                        <div
+                          key="image-hint"
+                          className={`p-1.5 sm:p-2 rounded-md border text-xs sm:text-sm ${
+                            isVisible
+                              ? "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                              : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-400"
+                          }`}
+                        >
+                          {isVisible ? (
+                            currentHarbor?.image_url ? (
+                              <div className="space-y-2">
+                                <p className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                                  Harbor Photo:
+                                </p>
+                                <div className="relative group">
+                                  <img
+                                    src={currentHarbor.image_url}
+                                    alt={`Harbor: ${currentHarbor.name}`}
+                                    className="w-full h-32 sm:h-40 object-cover rounded-md border border-slate-200 dark:border-slate-600"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      const fallback = e.currentTarget.nextElementSibling;
+                                      if (fallback) fallback.style.display = 'block';
+                                    }}
+                                  />
+                                  <div 
+                                    className="hidden text-xs text-slate-500 dark:text-slate-400"
+                                    style={{ display: 'none' }}
+                                  >
+                                    <p>{currentHarbor?.hints?.[2] || "Additional harbor information"}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <p>{currentHarbor?.hints?.[2] || "Additional harbor information"}</p>
+                            )
+                          ) : (
+                            <p>{t("locationGame.hintLocked", { number: 3 })}</p>
+                          )}
+                        </div>
+                      );
+                    }
+                    
+                    const textHintIndex = hintIndex > 2 ? hintIndex - 1 : hintIndex;
+                    const hintText = currentHarbor?.hints?.[textHintIndex];
+                    
+                    return (
+                      <div
+                        key={`hint-${hintIndex}`}
+                        className={`p-1.5 sm:p-2 rounded-md border text-xs sm:text-sm ${
+                          isVisible
+                            ? "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-400"
+                        }`}
+                      >
+                        <p>
+                          {isVisible && hintText 
+                            ? hintText 
+                            : t("locationGame.hintLocked", { number: hintIndex + 1 })}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Controls - Compact on mobile */}
               <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
                 <div className="flex items-center justify-between mb-2 sm:mb-3">
                   <div className="flex items-center gap-1 sm:gap-2">
@@ -685,7 +622,6 @@ export default function LocationGameContent() {
                 </form>
               </div>
 
-              {/* Game Actions - Mobile optimized, properly accessible */}
               {!currentState.isComplete ? (
                 <div className="space-y-3 sm:space-y-4">
                   <Button
@@ -701,13 +637,6 @@ export default function LocationGameContent() {
                       </span>
                     )}
                   </Button>
-                  
-                  {/* Show previous guesses count */}
-                  {currentState.guessCount > 0 && (
-                    <div className="text-center text-xs text-slate-600 dark:text-slate-400">
-
-                    </div>
-                  )}
                 </div>
               ) : gameCompleted ? (
                 <Button 
@@ -725,7 +654,6 @@ export default function LocationGameContent() {
                 </Button>
               )}
 
-              {/* Harbor Info when complete - Mobile optimized */}
               {currentState.isComplete && currentHarbor && (
                 <div className="mt-3 sm:mt-4 p-2 sm:p-3 lg:p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
                   <div className="flex items-center gap-2 mb-1 sm:mb-2">
@@ -742,7 +670,6 @@ export default function LocationGameContent() {
             </CardContent>
           </Card>
 
-          {/* Map - Proper size, scrollable on mobile */}
           <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow overflow-hidden">
             <div className="p-2 sm:p-3 lg:p-4 border-b border-slate-200 dark:border-slate-700">
               <h3 className="font-medium text-slate-800 dark:text-white flex items-center justify-between text-sm sm:text-base">
@@ -750,7 +677,6 @@ export default function LocationGameContent() {
                   <Ship className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 dark:text-blue-400" />
                   {t("locationGame.mapTitle")}
                 </div>
-                {/* Show guess progress in map header on mobile */}
                 <span className="text-xs text-slate-500 lg:hidden">
                   {currentState.guessCount + 1}/5
                 </span>
@@ -774,7 +700,6 @@ export default function LocationGameContent() {
           </div>
         </div>
 
-        {/* MODALS SECTION */}
         <NicknameModal
           show={showNicknameModal}
           onSubmit={handleNicknameSubmit}
