@@ -1,7 +1,7 @@
 // components/trivia-game-content.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import Link from "next/link"
 import { ArrowLeft, Check, RefreshCw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -24,7 +24,7 @@ const QUESTIONS_PER_GAME = 5
 const TIME_PER_QUESTION = 15
 
 export default function TriviaGameContent() {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const { user, loading: authLoading } = useAuth()
   const [allQuestions, setAllQuestions] = useState([])
   const [gameQuestions, setGameQuestions] = useState([])
@@ -69,7 +69,7 @@ export default function TriviaGameContent() {
     async function loadData() {
       try {
         setLoading(true)
-        const data = await fetchTriviaFromWorker()
+        const data = await fetchTriviaFromWorker(language) // Pass language
 
         if (!data || data.length === 0) {
           setError(t("triviaGame.noQuestionsMessage"))
@@ -79,7 +79,8 @@ export default function TriviaGameContent() {
 
         const validQuestions = data.filter(
           (q) =>
-            q && q.question && q.answers && Array.isArray(q.answers) && q.correctAnswer !== undefined && q.language,
+            q && q.question && q.answers && Array.isArray(q.answers) && 
+            q.correctAnswer !== undefined && q.language === language // Filter by language
         )
 
         if (validQuestions.length === 0) {
@@ -97,7 +98,7 @@ export default function TriviaGameContent() {
         setLoading(false)
         setTimerActive(true)
         setGameStartTime(Date.now())
-        console.log(`Started trivia game with ${selectedQuestions.length} questions (selected from ${validQuestions.length} total)`)
+        console.log(`Started trivia game with ${selectedQuestions.length} questions (selected from ${validQuestions.length} total) in language ${language}`)
       } catch (error) {
         console.error("Error loading trivia questions:", error)
         setError(t("triviaGame.errorLoadingQuestions"))
@@ -106,7 +107,7 @@ export default function TriviaGameContent() {
     }
 
     loadData()
-  }, [t])
+  }, [t, language]) // Add language to dependencies
 
   useEffect(() => {
     let timer
@@ -239,7 +240,6 @@ export default function TriviaGameContent() {
     resetGame();
   };
 
-  
   const resetGame = async () => {
     setLoading(true)
     setCurrentQuestionIndex(0)
@@ -257,7 +257,7 @@ export default function TriviaGameContent() {
     setGameFinished(false)
 
     try {
-      const data = await fetchTriviaFromWorker()
+      const data = await fetchTriviaFromWorker(language) // Pass language
       if (!data || data.length === 0) {
         setError(t("triviaGame.noQuestionsMessage"))
         setLoading(false)
@@ -267,7 +267,8 @@ export default function TriviaGameContent() {
       // Select new random 5 questions
       const validQuestions = data.filter(
         (q) =>
-          q && q.question && q.answers && Array.isArray(q.answers) && q.correctAnswer !== undefined && q.language,
+          q && q.question && q.answers && Array.isArray(q.answers) && 
+          q.correctAnswer !== undefined && q.language === language // Filter by language
       )
       
       setAllQuestions(validQuestions)
@@ -278,7 +279,7 @@ export default function TriviaGameContent() {
       setLoading(false)
       setTimerActive(true)
       setGameStartTime(Date.now())
-      console.log(`New trivia game started with ${selectedQuestions.length} questions`)
+      console.log(`New trivia game started with ${selectedQuestions.length} questions in language ${language}`)
     } catch (error) {
       console.error("Error loading trivia questions:", error)
       setError(t("triviaGame.errorLoadingQuestions"))
@@ -288,7 +289,7 @@ export default function TriviaGameContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
         <div className="text-center">
           <RefreshCw className="h-10 w-10 mx-auto animate-spin text-teal-600 dark:text-teal-400" />
           <p className="mt-4 text-slate-600 dark:text-slate-400">{t("triviaGame.loadingQuestions")}</p>
