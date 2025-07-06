@@ -30,12 +30,16 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
   const [harbors, setHarbors] = useState([]);
   const [trivia, setTrivia] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editingHarborId, setEditingHarborId] = useState<number | null>(null);
-  const [harborModalOpen, setHarborModalOpen] = useState(false);
-  const [editingTriviaId, setEditingTriviaId] = useState<number | null>(null);
-  const [triviaModalOpen, setTriviaModalOpen] = useState(false);
-  const [viewingHarborId, setViewingHarborId] = useState<number | null>(null);
-  const [harborViewModalOpen, setHarborViewModalOpen] = useState(false);
+  
+  // Modal states - using more specific state management
+  const [harborModals, setHarborModals] = useState({
+    edit: { open: false, harborId: null },
+    view: { open: false, harborId: null }
+  });
+  
+  const [triviaModals, setTriviaModals] = useState({
+    edit: { open: false, triviaId: null }
+  });
 
   useEffect(() => {
     loadDashboardData();
@@ -44,21 +48,22 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Loading dashboard data...');
 
-      // Load stats in parallel (excluding users for now - requires service role)
+      // Load stats in parallel
       const [harborsData, triviaData, gamesData] = await Promise.allSettled([
         supabase.from("harbors").select("*", { count: "exact", head: true }),
         supabase.from("trivia_questions").select("*", { count: "exact", head: true }),
         supabase.from("game_scores").select("*", { count: "exact", head: true })
       ]);
 
-      // Load actual data for management - get all languages
+      // Load actual data for management
       const [harborsList, triviaList] = await Promise.allSettled([
         supabase.from("harbors").select("*").order("id"),
         supabase.from("trivia_questions").select("*").order("id")
       ]);
 
-      // Group harbors by ID (so all translations are together)
+      // Group harbors by ID
       let groupedHarbors = [];
       if (harborsList.status === 'fulfilled' && harborsList.value.data) {
         const harborMap = new Map();
@@ -86,7 +91,7 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
         groupedHarbors = Array.from(harborMap.values()).sort((a, b) => a.id - b.id);
       }
 
-      // Group trivia by ID (so all translations are together)
+      // Group trivia by ID
       let groupedTrivia = [];
       if (triviaList.status === 'fulfilled' && triviaList.value.data) {
         const triviaMap = new Map();
@@ -124,8 +129,10 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
       setHarbors(groupedHarbors);
       setTrivia(groupedTrivia);
 
+      console.log('✅ Dashboard data loaded successfully');
+
     } catch (error) {
-      console.error("Error loading dashboard data:", error);
+      console.error("❌ Error loading dashboard data:", error);
     } finally {
       setLoading(false);
     }
@@ -133,54 +140,84 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
 
   // Harbor management handlers
   const handleAddHarbor = () => {
-    setEditingHarborId(null);
-    setHarborModalOpen(true);
+    console.log('➕ Opening add harbor modal');
+    setHarborModals({
+      edit: { open: true, harborId: null },
+      view: { open: false, harborId: null }
+    });
   };
 
   const handleViewHarbor = (harborId: number) => {
-    setViewingHarborId(harborId);
-    setHarborViewModalOpen(true);
+    console.log('👁️ Opening view harbor modal for ID:', harborId);
+    setHarborModals({
+      edit: { open: false, harborId: null },
+      view: { open: true, harborId }
+    });
   };
 
   const handleEditHarbor = (harborId: number) => {
-    setEditingHarborId(harborId);
-    setHarborModalOpen(true);
+    console.log('✏️ Opening edit harbor modal for ID:', harborId);
+    setHarborModals({
+      edit: { open: true, harborId },
+      view: { open: false, harborId: null }
+    });
   };
 
-  const handleDeleteHarbor = (harborId: number) => {
-    console.log("Delete harbor:", harborId);
-    // TODO: Show confirmation dialog
+  const handleCloseHarborModals = () => {
+    console.log('❌ Closing harbor modals');
+    setHarborModals({
+      edit: { open: false, harborId: null },
+      view: { open: false, harborId: null }
+    });
   };
 
   const handleHarborSaved = () => {
-    // Reload dashboard data after saving
+    console.log('💾 Harbor saved, reloading data');
     loadDashboardData();
+    handleCloseHarborModals();
+  };
+
+  const handleDeleteHarbor = (harborId: number) => {
+    console.log("🗑️ Delete harbor:", harborId);
+    // TODO: Implement delete functionality with confirmation dialog
   };
 
   // Trivia management handlers
   const handleAddQuestion = () => {
-    setEditingTriviaId(null);
-    setTriviaModalOpen(true);
+    console.log('➕ Opening add question modal');
+    setTriviaModals({
+      edit: { open: true, triviaId: null }
+    });
   };
 
   const handleViewQuestion = (questionId: number) => {
-    console.log("View question:", questionId);
-    // TODO: Open question view modal
+    console.log("👁️ View question:", questionId);
+    // TODO: Implement question view modal
   };
 
   const handleEditQuestion = (questionId: number) => {
-    setEditingTriviaId(questionId);
-    setTriviaModalOpen(true);
+    console.log('✏️ Opening edit question modal for ID:', questionId);
+    setTriviaModals({
+      edit: { open: true, triviaId: questionId }
+    });
   };
 
-  const handleDeleteQuestion = (questionId: number) => {
-    console.log("Delete question:", questionId);
-    // TODO: Show confirmation dialog
+  const handleCloseTriviaModals = () => {
+    console.log('❌ Closing trivia modals');
+    setTriviaModals({
+      edit: { open: false, triviaId: null }
+    });
   };
 
   const handleTriviaSaved = () => {
-    // Reload dashboard data after saving
+    console.log('💾 Trivia saved, reloading data');
     loadDashboardData();
+    handleCloseTriviaModals();
+  };
+
+  const handleDeleteQuestion = (questionId: number) => {
+    console.log("🗑️ Delete question:", questionId);
+    // TODO: Implement delete functionality with confirmation dialog
   };
 
   if (loading) {
@@ -279,27 +316,26 @@ export default function AdminDashboard({ initialUser }: AdminDashboardProps) {
           </Tabs>
         </div>
 
-        {/* Harbor Edit Modal */}
+        {/* Harbor Modals */}
         <HarborEditModal
-          harborId={editingHarborId}
-          isOpen={harborModalOpen}
-          onClose={() => setHarborModalOpen(false)}
+          harborId={harborModals.edit.harborId}
+          isOpen={harborModals.edit.open}
+          onClose={handleCloseHarborModals}
           onSave={handleHarborSaved}
         />
 
-        {/* Harbor View Modal */}
         <HarborViewModal
-          harborId={viewingHarborId}
-          isOpen={harborViewModalOpen}
-          onClose={() => setHarborViewModalOpen(false)}
+          harborId={harborModals.view.harborId}
+          isOpen={harborModals.view.open}
+          onClose={handleCloseHarborModals}
           onEdit={handleEditHarbor}
         />
 
-        {/* Trivia Edit Modal */}
+        {/* Trivia Modal */}
         <TriviaEditModal
-          triviaId={editingTriviaId}
-          isOpen={triviaModalOpen}
-          onClose={() => setTriviaModalOpen(false)}
+          triviaId={triviaModals.edit.triviaId}
+          isOpen={triviaModals.edit.open}
+          onClose={handleCloseTriviaModals}
           onSave={handleTriviaSaved}
         />
       </div>

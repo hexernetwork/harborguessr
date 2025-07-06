@@ -2,6 +2,7 @@
 /**
  * Harbor API Worker - Production Grade Configurable
  * All values configurable via environment variables
+ * Now includes image deletion with automatic cache clearing
  */
 
 // Cache configuration
@@ -43,6 +44,11 @@ export default {
         return await uploadImage(request, env, corsHeaders);
       }
 
+      // ROUTE: Delete image (admin only) - NEW!
+      if (request.method === 'DELETE' && url.pathname === '/delete-image') {
+        return await deleteImage(request, env, corsHeaders);
+      }
+
       // ROUTE: Clear cache (admin only)
       if (request.method === 'POST' && url.pathname === '/cache/clear') {
         return await clearCache(request, env, corsHeaders);
@@ -58,10 +64,36 @@ export default {
         return new Response(JSON.stringify({ 
           status: 'ok', 
           timestamp: new Date().toISOString(),
-          version: '1.0.0',
+          version: '1.1.0',
           cache: 'enabled',
           auth: 'supabase-jwt-configurable',
-          security: 'metadata-based-admin'
+          security: 'metadata-based-admin',
+          features: ['upload', 'delete', 'cache-clear']
+        }), {
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+      }
+
+      // ROUTE: Root info
+      if (url.pathname === '/') {
+        return new Response(JSON.stringify({
+          name: 'Harbor API Worker',
+          version: '1.1.0',
+          endpoints: {
+            'GET /harbors?lang=fi': 'Get harbors with caching',
+            'GET /trivia?lang=fi': 'Get trivia with caching',
+            'POST /upload-image': 'Upload image (admin)',
+            'DELETE /delete-image': 'Delete image (admin)',
+            'POST /cache/clear': 'Clear cache (admin)',
+            'GET /cache/stats': 'Cache statistics',
+            'GET /health': 'Health check'
+          },
+          cache: 'KV-based with 1 year TTL',
+          auth: 'Supabase JWT with configurable admin verification'
         }), {
           headers: { 
             ...corsHeaders, 
@@ -74,7 +106,8 @@ export default {
       // Default 404 response
       return new Response(JSON.stringify({
         error: 'Not Found',
-        message: `Endpoint ${url.pathname} not found`
+        message: `Endpoint ${url.pathname} not found`,
+        available_endpoints: ['/harbors', '/trivia', '/upload-image', '/delete-image', '/cache/clear', '/cache/stats', '/health']
       }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -178,6 +211,33 @@ async function verifyAdminAccess(supabaseToken, userId, env) {
   } catch (error) {
     console.error('❌ Error during admin verification:', error);
     return false;
+  }
+}
+
+/**
+ * Clear ALL cache for all harbors after image changes
+ */
+async function clearAllHarborCache(env) {
+  try {
+    console.log('🗑️ Clearing all harbor cache after image change...');
+    
+    const languages = ['fi', 'en', 'sv'];
+    const clearedKeys = [];
+    
+    // Clear harbor cache for all languages
+    for (const lang of languages) {
+      const key = getCacheKey('harbors', lang);
+      await env.HARBOR_CACHE.delete(key);
+      clearedKeys.push(key);
+      console.log(`🗑️ Cleared cache key: ${key}`);
+    }
+    
+    console.log(`✅ Cleared ${clearedKeys.length} harbor cache keys`);
+    return clearedKeys;
+    
+  } catch (error) {
+    console.error('❌ Error clearing harbor cache:', error);
+    throw error;
   }
 }
 
@@ -497,7 +557,7 @@ async function getCacheStats(env, corsHeaders) {
 }
 
 /**
- * Image upload to R2 with configurable URL
+ * Image upload to R2 with configurable URL and automatic cache clearing
  */
 async function uploadImage(request, env, corsHeaders) {
   try {
@@ -563,6 +623,14 @@ async function uploadImage(request, env, corsHeaders) {
     // Use configurable public URL
     const imageUrl = `${env.R2_PUBLIC_URL}/${filename}`;
 
+    // Clear harbor cache since images affect harbor data
+    try {
+      const clearedKeys = await clearAllHarborCache(env);
+      console.log(`✅ Auto-cleared harbor cache after image upload: ${clearedKeys.length} keys`);
+    } catch (cacheError) {
+      console.error('⚠️ Failed to clear cache after upload (continuing anyway):', cacheError);
+    }
+
     return new Response(JSON.stringify({
       success: true,
       url: imageUrl,
@@ -570,6 +638,7 @@ async function uploadImage(request, env, corsHeaders) {
       size: file.size,
       type: file.type,
       uploaded_by: userId,
+      cache_cleared: true,
       timestamp: new Date().toISOString()
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -579,6 +648,119 @@ async function uploadImage(request, env, corsHeaders) {
     console.error('Image upload error:', error);
     return new Response(JSON.stringify({ 
       error: 'Upload failed',
+      message: error.message 
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+/**
+ * Delete image from R2 with configurable admin verification and automatic cache clearing
+ */
+async function deleteImage(request, env, corsHeaders) {
+  try {
+    const body = await request.json();
+    const { imageUrl, supabaseToken, userId } = body;
+
+    console.log('🗑️ Delete image request received:', { imageUrl, userId });
+
+    // Validate required fields
+    if (!supabaseToken || !userId) {
+      return new Response(JSON.stringify({ 
+        error: 'Missing authentication',
+        message: 'supabaseToken and userId are required'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (!imageUrl) {
+      return new Response(JSON.stringify({ 
+        error: 'Missing imageUrl',
+        message: 'imageUrl is required'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Use configurable admin verification (same as upload)
+    const isAdmin = await verifyAdminAccess(supabaseToken, userId, env);
+    
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ 
+        error: 'Unauthorized',
+        message: 'Admin access required for image deletion'
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Extract filename from the R2 URL
+    // Expected format: https://pub-40af20c56eb7480285252a2f5d11ea7d.r2.dev/harbor-1751815639965-8rlgbc.jpg
+    const urlParts = imageUrl.split('/');
+    const filename = urlParts[urlParts.length - 1];
+    
+    console.log('🗑️ Extracted filename:', filename);
+
+    // Validate filename format (security check)
+    if (!filename || !filename.startsWith('harbor-') || !filename.includes('-')) {
+      console.error('❌ Invalid filename format:', filename);
+      return new Response(JSON.stringify({ 
+        error: 'Invalid image URL',
+        message: 'Image URL does not match expected format'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Validate R2 configuration
+    if (!env.HARBOR_IMAGES) {
+      return new Response(JSON.stringify({ 
+        error: 'R2 configuration missing',
+        message: 'HARBOR_IMAGES R2 binding not configured'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log('🗑️ Attempting to delete from R2:', filename);
+
+    // Delete from R2 bucket
+    const deleteResult = await env.HARBOR_IMAGES.delete(filename);
+    
+    console.log('✅ R2 delete completed:', deleteResult);
+
+    // Clear harbor cache since image deletion affects harbor data
+    try {
+      const clearedKeys = await clearAllHarborCache(env);
+      console.log(`✅ Auto-cleared harbor cache after image deletion: ${clearedKeys.length} keys`);
+    } catch (cacheError) {
+      console.error('⚠️ Failed to clear cache after deletion (continuing anyway):', cacheError);
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Image deleted successfully',
+      filename: filename,
+      originalUrl: imageUrl,
+      deleted_by: userId,
+      cache_cleared: true,
+      timestamp: new Date().toISOString()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('❌ Image deletion error:', error);
+    return new Response(JSON.stringify({ 
+      error: 'Delete failed',
       message: error.message 
     }), {
       status: 500,

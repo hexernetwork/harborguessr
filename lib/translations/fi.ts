@@ -103,6 +103,15 @@ const fi = {
     gameComplete: "Peli päättyi!",
     playAgain: "Pelaa uudelleen",
     seeFinalResult: "Katso lopputulos",
+    imageHint: "Sataman kuva:",
+    imageNotAvailable: "Kuva ei ole saatavilla",
+    noImageAvailable: "Tälle satamalle ei ole saatavilla kuvaa",
+    replaceImage: "Vaihda kuva",
+    uploadNewImage: "Lataa uusi kuva",
+    removeImage: "Poista kuva",
+    imageUploadSuccess: "Kuva ladattu onnistuneesti!",
+    imageUploadError: "Kuvan lataus epäonnistui. Yritä uudelleen.",
+    imageRemoved: "Kuva poistettu onnistuneesti.",
 
   },
   triviaGame: {

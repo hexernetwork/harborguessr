@@ -1,5 +1,5 @@
 -- database-schema.sql
--- Complete database schema for Finnish Harbor Guesser with Leaderboards
+-- Complete database schema for Finnish Harbor Guesser with Leaderboards and Images
 -- Run this script in your Supabase SQL editor to set up the database
 
 -- Enable necessary extensions
@@ -17,7 +17,7 @@ DROP TABLE IF EXISTS trivia_questions CASCADE;
 DROP TABLE IF EXISTS harbors CASCADE;
 DROP TABLE IF EXISTS harbor_images CASCADE;
 
--- Create harbors table with view_count for randomization
+-- Create harbors table with view_count for randomization and image support
 CREATE TABLE harbors (
   id INTEGER NOT NULL,
   name TEXT NOT NULL,
@@ -34,6 +34,11 @@ CREATE TABLE harbors (
   image_uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   PRIMARY KEY (id, language)
 );
+
+-- Add comments to explain the image columns
+COMMENT ON COLUMN harbors.image_url IS 'URL to harbor image stored in R2. Same image shared across all language versions of the harbor.';
+COMMENT ON COLUMN harbors.image_filename IS 'Original filename of the uploaded image for reference.';
+COMMENT ON COLUMN harbors.image_uploaded_at IS 'Timestamp when the image was uploaded.';
 
 -- Create harbor_hints table
 CREATE TABLE harbor_hints (
@@ -105,7 +110,7 @@ CREATE TABLE trivia_answers (
   FOREIGN KEY (question_id, language) REFERENCES trivia_questions (id, language) ON DELETE CASCADE
 );
 
--- Harbor images table for better image management
+-- Harbor images table for better image management (alternative to storing in harbors table)
 CREATE TABLE harbor_images (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   harbor_id INTEGER NOT NULL,
@@ -278,7 +283,7 @@ CREATE OR REPLACE FUNCTION check_user_admin(user_id_param uuid)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
+AS $
 BEGIN
   RETURN EXISTS (
     SELECT 1 FROM auth.users 
@@ -291,7 +296,7 @@ BEGIN
     )
   );
 END;
-$$;
+$;
 
 /**
  * Grant admin role to a user by email
@@ -300,7 +305,7 @@ CREATE OR REPLACE FUNCTION grant_admin_role(user_email text)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
+AS $
 BEGIN
   UPDATE auth.users 
   SET 
@@ -310,7 +315,7 @@ BEGIN
   
   RETURN FOUND;
 END;
-$$;
+$;
 
 /**
  * Remove admin role from a user by email
@@ -319,7 +324,7 @@ CREATE OR REPLACE FUNCTION revoke_admin_role(user_email text)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
+AS $
 BEGIN
   UPDATE auth.users 
   SET 
@@ -329,7 +334,7 @@ BEGIN
   
   RETURN FOUND;
 END;
-$$;
+$;
 
 /**
  * List all admin users
@@ -344,7 +349,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
+AS $
 BEGIN
   RETURN QUERY
   SELECT 
@@ -367,7 +372,7 @@ BEGIN
     u.raw_app_meta_data->>'role' = 'admin'
   ORDER BY u.created_at;
 END;
-$$;
+$;
 
 -- ===================================================================
 -- GAME FUNCTIONS
@@ -375,7 +380,7 @@ $$;
 
 -- Create function to increment view count for harbors
 CREATE OR REPLACE FUNCTION increment_harbor_view_count()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $
 BEGIN
   UPDATE harbors
   SET view_count = view_count + 1,
@@ -383,7 +388,7 @@ BEGIN
   WHERE id = NEW.harbor_id AND language = NEW.language;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Create trigger to increment harbor view count when a guess is made
 CREATE TRIGGER increment_harbor_view_count_trigger
@@ -393,7 +398,7 @@ EXECUTE FUNCTION increment_harbor_view_count();
 
 -- Create function to increment view count for trivia questions
 CREATE OR REPLACE FUNCTION increment_trivia_view_count()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $
 BEGIN
   UPDATE trivia_questions
   SET view_count = view_count + 1,
@@ -401,7 +406,7 @@ BEGIN
   WHERE id = NEW.question_id AND language = NEW.language;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Create trigger to increment trivia view count when an answer is submitted
 CREATE TRIGGER increment_trivia_view_count_trigger
@@ -425,7 +430,7 @@ RETURNS TABLE (
   image_url TEXT,
   image_filename TEXT,
   image_uploaded_at TIMESTAMP WITH TIME ZONE
-) AS $$
+) AS $
 BEGIN
   RETURN QUERY
   SELECT h.*
@@ -434,7 +439,7 @@ BEGIN
   ORDER BY h.view_count ASC, RANDOM()
   LIMIT 1;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION get_random_trivia_question(lang TEXT)
 RETURNS TABLE (
@@ -446,7 +451,7 @@ RETURNS TABLE (
   language TEXT,
   view_count INTEGER,
   last_viewed TIMESTAMP WITH TIME ZONE
-) AS $$
+) AS $
 BEGIN
   RETURN QUERY
   SELECT t.*
@@ -455,7 +460,7 @@ BEGIN
   ORDER BY t.view_count ASC, RANDOM()
   LIMIT 1;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION get_random_trivia_questions(lang TEXT, num_questions INTEGER)
 RETURNS TABLE (
@@ -467,7 +472,7 @@ RETURNS TABLE (
   language TEXT,
   view_count INTEGER,
   last_viewed TIMESTAMP WITH TIME ZONE
-) AS $$
+) AS $
 BEGIN
   RETURN QUERY
   SELECT t.*
@@ -476,7 +481,99 @@ BEGIN
   ORDER BY t.view_count ASC, RANDOM()
   LIMIT num_questions;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
+
+-- ===================================================================
+-- IMAGE MANAGEMENT FUNCTIONS
+-- ===================================================================
+
+-- Create a view to easily see harbors with and without images
+CREATE OR REPLACE VIEW harbors_image_status AS
+SELECT 
+  id,
+  language,
+  name,
+  region,
+  CASE 
+    WHEN image_url IS NOT NULL AND image_url != '' THEN 'Has Image'
+    ELSE 'No Image'
+  END as image_status,
+  image_url,
+  image_filename,
+  image_uploaded_at,
+  view_count
+FROM harbors
+ORDER BY id, language;
+
+-- Create a function to get harbor statistics including image counts
+CREATE OR REPLACE FUNCTION get_harbor_image_stats()
+RETURNS TABLE (
+  total_harbors INTEGER,
+  harbors_with_images INTEGER,
+  harbors_without_images INTEGER,
+  image_coverage_percentage NUMERIC,
+  total_images_uploaded INTEGER,
+  most_recent_upload TIMESTAMP WITH TIME ZONE
+) 
+LANGUAGE SQL
+AS $
+  SELECT 
+    COUNT(DISTINCT id)::INTEGER as total_harbors,
+    COUNT(DISTINCT CASE WHEN image_url IS NOT NULL AND image_url != '' THEN id END)::INTEGER as harbors_with_images,
+    COUNT(DISTINCT CASE WHEN image_url IS NULL OR image_url = '' THEN id END)::INTEGER as harbors_without_images,
+    ROUND(
+      (COUNT(DISTINCT CASE WHEN image_url IS NOT NULL AND image_url != '' THEN id END)::NUMERIC / 
+       COUNT(DISTINCT id)::NUMERIC) * 100, 
+      2
+    ) as image_coverage_percentage,
+    COUNT(CASE WHEN image_url IS NOT NULL AND image_url != '' THEN 1 END)::INTEGER as total_images_uploaded,
+    MAX(image_uploaded_at) as most_recent_upload
+  FROM harbors;
+$;
+
+-- Function to update all language versions of a harbor with the same image
+CREATE OR REPLACE FUNCTION update_harbor_image(
+  harbor_id_param INTEGER,
+  image_url_param TEXT,
+  image_filename_param TEXT DEFAULT NULL
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $
+DECLARE
+  affected_rows INTEGER := 0;
+BEGIN
+  UPDATE harbors 
+  SET 
+    image_url = image_url_param,
+    image_filename = image_filename_param,
+    image_uploaded_at = NOW()
+  WHERE id = harbor_id_param;
+  
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  RETURN affected_rows;
+END;
+$;
+
+-- Function to remove image from all language versions of a harbor
+CREATE OR REPLACE FUNCTION remove_harbor_image(harbor_id_param INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $
+DECLARE
+  affected_rows INTEGER := 0;
+BEGIN
+  UPDATE harbors 
+  SET 
+    image_url = NULL,
+    image_filename = NULL,
+    image_uploaded_at = NULL
+  WHERE id = harbor_id_param;
+  
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  RETURN affected_rows;
+END;
+$;
 
 -- ===================================================================
 -- LEADERBOARD FUNCTIONS
@@ -484,7 +581,7 @@ $$ LANGUAGE plpgsql;
 
 -- Function to automatically create leaderboard entry when a game score is inserted
 CREATE OR REPLACE FUNCTION create_leaderboard_entry()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $
 BEGIN
   -- Only create leaderboard entry for games with decent scores
   IF NEW.score > 0 THEN
@@ -517,7 +614,7 @@ BEGIN
   
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Trigger to automatically create leaderboard entries
 CREATE TRIGGER create_leaderboard_entry_trigger
@@ -542,7 +639,7 @@ RETURNS TABLE (
   accuracy_percentage DECIMAL(5,2),
   game_duration_seconds INTEGER,
   completed_at TIMESTAMP WITH TIME ZONE
-) AS $$
+) AS $
 BEGIN
   RETURN QUERY
   WITH ranked_entries AS (
@@ -576,7 +673,7 @@ BEGIN
   ORDER BY rank
   LIMIT limit_count;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Function to get all-time leaderboard
 CREATE OR REPLACE FUNCTION get_alltime_leaderboard(
@@ -595,7 +692,7 @@ RETURNS TABLE (
   accuracy_percentage DECIMAL(5,2),
   game_duration_seconds INTEGER,
   completed_at TIMESTAMP WITH TIME ZONE
-) AS $$
+) AS $
 BEGIN
   RETURN QUERY
   WITH ranked_entries AS (
@@ -628,7 +725,7 @@ BEGIN
   ORDER BY rank
   LIMIT limit_count;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Function to get user's best scores
 CREATE OR REPLACE FUNCTION get_user_best_scores(
@@ -643,7 +740,7 @@ RETURNS TABLE (
   games_played BIGINT,
   rank_weekly INTEGER,
   rank_alltime INTEGER
-) AS $$
+) AS $
 BEGIN
   RETURN QUERY
   WITH user_stats AS (
@@ -673,179 +770,69 @@ BEGIN
       al.game_type,
       al.rank
     FROM get_alltime_leaderboard(lang) al
-    WHERE (user_id_param IS NOT NULL AND al.user_id = user_id_param)
-       OR (session_id_param IS NOT NULL AND al.nickname IS NOT NULL)
-  )
-  SELECT 
-    us.game_type,
-    us.best_score,
-    us.best_accuracy,
-    us.games_played,
-    wr.rank as rank_weekly,
-    ar.rank as rank_alltime
-  FROM user_stats us
-  LEFT JOIN weekly_ranks wr ON us.game_type = wr.game_type
-  LEFT JOIN alltime_ranks ar ON us.game_type = ar.game_type;
-END;
-$$ LANGUAGE plpgsql;
+    WHERE (user_id_param IS NOT NULL-- Add image_url column to harbors table
+-- Run this SQL in your Supabase SQL Editor
 
--- Function to clean up old leaderboard entries (optional maintenance)
-CREATE OR REPLACE FUNCTION cleanup_old_leaderboard_entries(days_to_keep INTEGER DEFAULT 90)
-RETURNS INTEGER AS $$
-DECLARE
-  deleted_count INTEGER := 0;
-BEGIN
-  -- Keep all-time best scores, but clean up older lower scores
-  DELETE FROM leaderboard_entries 
-  WHERE completed_at < NOW() - INTERVAL '1 day' * days_to_keep
-    AND id NOT IN (
-      SELECT DISTINCT ON (COALESCE(user_id::text, session_id), game_type, language) id
-      FROM leaderboard_entries
-      ORDER BY COALESCE(user_id::text, session_id), game_type, language, score DESC
-    );
-  
-  GET DIAGNOSTICS deleted_count = ROW_COUNT;
-  RETURN deleted_count;
-END;
-$$ LANGUAGE plpgsql;
+-- Add the image_url column to harbors table if it doesn't exist
+ALTER TABLE harbors 
+ADD COLUMN IF NOT EXISTS image_url TEXT;
 
--- Function to clean up orphaned images
-CREATE OR REPLACE FUNCTION cleanup_orphaned_harbor_images()
-RETURNS INTEGER AS $$
-DECLARE
-  deleted_count INTEGER := 0;
-BEGIN
-  DELETE FROM harbor_images 
-  WHERE harbor_id NOT IN (SELECT DISTINCT id FROM harbors);
-  
-  GET DIAGNOSTICS deleted_count = ROW_COUNT;
-  RETURN deleted_count;
-END;
-$$ LANGUAGE plpgsql;
+-- Add a comment to explain the column
+COMMENT ON COLUMN harbors.image_url IS 'URL to harbor image stored in R2. Same image shared across all language versions of the harbor.';
 
--- ===================================================================
--- STORAGE BUCKETS AND POLICIES
--- ===================================================================
+-- Create index for faster queries when filtering by image availability
+CREATE INDEX IF NOT EXISTS idx_harbors_image_url ON harbors(image_url) WHERE image_url IS NOT NULL;
 
--- Create storage bucket for avatars
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('avatars', 'avatars', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Create storage bucket for harbor images
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('harbor-images', 'harbor-images', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Storage policies for avatars
-CREATE POLICY "Avatar images are publicly accessible"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'avatars');
-
-CREATE POLICY "Users can upload avatars"
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
-
-CREATE POLICY "Users can update their own avatars"
-  ON storage.objects FOR UPDATE
-  USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
-
-CREATE POLICY "Users can delete their own avatars"
-  ON storage.objects FOR DELETE
-  USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
-
--- Storage policies for harbor images
-CREATE POLICY "Harbor images are publicly accessible"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'harbor-images');
-
-CREATE POLICY "Authenticated users can upload harbor images"
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'harbor-images' AND auth.role() = 'authenticated');
-
-CREATE POLICY "Authenticated users can update harbor images"
-  ON storage.objects FOR UPDATE
-  USING (bucket_id = 'harbor-images' AND auth.role() = 'authenticated');
-
-CREATE POLICY "Authenticated users can delete harbor images"
-  ON storage.objects FOR DELETE
-  USING (bucket_id = 'harbor-images' AND auth.role() = 'authenticated');
-
--- ===================================================================
--- PERMISSIONS AND INDEXES
--- ===================================================================
-
--- Grant necessary permissions
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;
-
--- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_harbors_language ON harbors(language);
-CREATE INDEX IF NOT EXISTS idx_harbors_view_count ON harbors(view_count);
-CREATE INDEX IF NOT EXISTS idx_harbors_language_view_count ON harbors(language, view_count);
-
-CREATE INDEX IF NOT EXISTS idx_trivia_questions_language ON trivia_questions(language);
-CREATE INDEX IF NOT EXISTS idx_trivia_questions_view_count ON trivia_questions(view_count);
-CREATE INDEX IF NOT EXISTS idx_trivia_questions_language_view_count ON trivia_questions(language, view_count);
-
-CREATE INDEX IF NOT EXISTS idx_game_scores_user_id ON game_scores(user_id);
-CREATE INDEX IF NOT EXISTS idx_game_scores_session_id ON game_scores(session_id);
-CREATE INDEX IF NOT EXISTS idx_game_scores_game_type ON game_scores(game_type);
-CREATE INDEX IF NOT EXISTS idx_game_scores_completed_at ON game_scores(completed_at);
-
-CREATE INDEX IF NOT EXISTS idx_harbor_guesses_user_id ON harbor_guesses(user_id);
-CREATE INDEX IF NOT EXISTS idx_harbor_guesses_session_id ON harbor_guesses(session_id);
-CREATE INDEX IF NOT EXISTS idx_harbor_guesses_harbor_id ON harbor_guesses(harbor_id);
-
-CREATE INDEX IF NOT EXISTS idx_trivia_answers_user_id ON trivia_answers(user_id);
-CREATE INDEX IF NOT EXISTS idx_trivia_answers_session_id ON trivia_answers(session_id);
-CREATE INDEX IF NOT EXISTS idx_trivia_answers_question_id ON trivia_answers(question_id);
-
-CREATE INDEX IF NOT EXISTS idx_harbor_images_harbor_id ON harbor_images(harbor_id);
-CREATE INDEX IF NOT EXISTS idx_harbor_images_primary ON harbor_images(harbor_id, is_primary);
-CREATE INDEX IF NOT EXISTS idx_harbor_images_uploaded_by ON harbor_images(uploaded_by);
-
--- Leaderboard indexes for performance
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_language ON leaderboard_entries(language);
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_game_type ON leaderboard_entries(game_type);
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_score ON leaderboard_entries(score DESC);
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_completed_at ON leaderboard_entries(completed_at);
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_user_id ON leaderboard_entries(user_id);
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_session_id ON leaderboard_entries(session_id);
--- Skip the partial index with NOW() - PostgreSQL doesn't allow non-immutable functions in index predicates
--- CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_weekly ON leaderboard_entries(language, game_type, completed_at) WHERE completed_at >= NOW() - INTERVAL '7 days';
-CREATE INDEX IF NOT EXISTS idx_leaderboard_entries_ranking ON leaderboard_entries(language, game_type, score DESC, accuracy_percentage DESC, game_duration_seconds ASC);
-
--- ===================================================================
--- USAGE EXAMPLES
--- ===================================================================
-
+-- Update existing harbors with sample image URLs if needed (optional)
+-- Uncomment and modify these if you have specific images to add
 /*
--- Example: Grant admin role to a user
-SELECT grant_admin_role('user@example.com');
+UPDATE harbors 
+SET image_url = 'https://your-r2-domain.r2.dev/sample-harbor-1.jpg' 
+WHERE id = 1 AND image_url IS NULL;
 
--- Example: Get weekly leaderboard for location games
-SELECT * FROM get_weekly_leaderboard('fi', 'location', 20);
-
--- Example: Get all-time leaderboard for all games
-SELECT * FROM get_alltime_leaderboard('fi', NULL, 50);
-
--- Example: Get user's best scores
-SELECT * FROM get_user_best_scores('8e2cd4de-ba91-470d-872c-713297cef25a'::uuid, NULL, 'fi');
-
--- Example: Get anonymous user's best scores
-SELECT * FROM get_user_best_scores(NULL, 'session_123', 'fi');
-
--- Example: Clean up old leaderboard entries (keep 90 days)
-SELECT cleanup_old_leaderboard_entries(90);
-
--- Example: Insert a game score (will automatically create leaderboard entry)
-INSERT INTO game_scores (user_id, game_type, score, language, nickname, game_duration_seconds, questions_answered, correct_answers)
-VALUES (auth.uid(), 'trivia', 850, 'fi', NULL, 120, 10, 8);
-
--- Example: Insert anonymous game score
-INSERT INTO game_scores (session_id, game_type, score, language, nickname, game_duration_seconds, questions_answered, correct_answers)
-VALUES ('session_123', 'location', 1200, 'fi', 'Harbor Master', 180, 5, 4);
+UPDATE harbors 
+SET image_url = 'https://your-r2-domain.r2.dev/sample-harbor-2.jpg' 
+WHERE id = 2 AND image_url IS NULL;
 */
+
+-- Create a view to easily see harbors with and without images
+CREATE OR REPLACE VIEW harbors_image_status AS
+SELECT 
+  id,
+  language,
+  name,
+  region,
+  CASE 
+    WHEN image_url IS NOT NULL AND image_url != '' THEN 'Has Image'
+    ELSE 'No Image'
+  END as image_status,
+  image_url,
+  view_count
+FROM harbors
+ORDER BY id, language;
+
+-- Create a function to get harbor statistics including image counts
+CREATE OR REPLACE FUNCTION get_harbor_image_stats()
+RETURNS TABLE (
+  total_harbors INTEGER,
+  harbors_with_images INTEGER,
+  harbors_without_images INTEGER,
+  image_coverage_percentage NUMERIC
+) 
+LANGUAGE SQL
+AS $$
+  SELECT 
+    COUNT(DISTINCT id)::INTEGER as total_harbors,
+    COUNT(DISTINCT CASE WHEN image_url IS NOT NULL AND image_url != '' THEN id END)::INTEGER as harbors_with_images,
+    COUNT(DISTINCT CASE WHEN image_url IS NULL OR image_url = '' THEN id END)::INTEGER as harbors_without_images,
+    ROUND(
+      (COUNT(DISTINCT CASE WHEN image_url IS NOT NULL AND image_url != '' THEN id END)::NUMERIC / 
+       COUNT(DISTINCT id)::NUMERIC) * 100, 
+      2
+    ) as image_coverage_percentage
+  FROM harbors;
+$$;
+
+-- Usage examples:
+-- SELECT * FROM harbors_image_status;
+-- SELECT * FROM get_harbor_image_stats();
