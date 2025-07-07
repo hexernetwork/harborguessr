@@ -4,6 +4,7 @@
 import { HelpCircle, Plus, Eye, Edit, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
 
 interface TriviaGroup {
   id: number;
@@ -26,6 +27,11 @@ export default function TriviaManagement({
   onEditQuestion, 
   onDeleteQuestion 
 }: TriviaManagementProps) {
+  const [showAll, setShowAll] = useState(false);
+
+  // Determine which questions to display
+  const displayedTrivia = showAll ? trivia : trivia.slice(0, 5);
+
   return (
     <Card>
       <CardHeader>
@@ -49,7 +55,7 @@ export default function TriviaManagement({
             </div>
           ) : (
             <div className="space-y-2">
-              {trivia.slice(0, 5).map((triviaGroup) => {
+              {displayedTrivia.map((triviaGroup) => {
                 const question = triviaGroup.primaryData;
                 const languages = Object.keys(triviaGroup.translations);
                 const totalViews = Object.values(triviaGroup.translations)
@@ -102,7 +108,15 @@ export default function TriviaManagement({
               })}
               {trivia.length > 5 && (
                 <div className="text-center pt-4">
-                  <Button variant="outline">View All Questions ({trivia.length})</Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowAll(!showAll)}
+                  >
+                    {showAll 
+                      ? `Show Less` 
+                      : `View All Questions (${trivia.length})`
+                    }
+                  </Button>
                 </div>
               )}
             </div>
