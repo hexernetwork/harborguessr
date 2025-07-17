@@ -1,0 +1,10 @@
+node_modules
+/node_modules
+node_modules/
+.next/
+out/
+*.log
+ales/
+.env.local
+.next
+next
