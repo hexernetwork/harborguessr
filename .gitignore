@@ -8,3 +8,10 @@ ales/
 .env.local
 .next
 next
+# Harbor Guesser Infrastructure Secrets
+terraform/shared/secrets/
+terraform/environments/*/terraform.tfvars
+terraform/environments/*/.terraform/
+terraform/environments/*/terraform.tfstate*
+terraform/environments/*/.terraform.lock.hcl
+terraform/**/.env
