@@ -1,5 +1,5 @@
 # terraform/modules/database/supabase/main.tf
-# SaaS-Ready Lightweight Supabase module for Harbor Guesser
+
 terraform {
   required_providers {
     hcloud = {
@@ -23,7 +23,7 @@ resource "hcloud_server" "supabase" {
   location     = var.location
   ssh_keys     = [hcloud_ssh_key.supabase_key.id]
   
-  # Server initialization script with lightweight Supabase setup
+  # Server initialization script with Supabase
   user_data = templatefile("${path.module}/user_data.sh", {
     postgres_password = var.postgres_password
     jwt_secret       = var.jwt_secret
@@ -32,7 +32,7 @@ resource "hcloud_server" "supabase" {
   labels = var.tags
 }
 
-# Create firewall rules for lightweight Supabase services
+# Create firewall rules
 resource "hcloud_firewall" "supabase_firewall" {
   name = "${var.project_name}-${var.environment}-supabase-firewall"
   
@@ -42,10 +42,10 @@ resource "hcloud_firewall" "supabase_firewall" {
     port        = "22"
     protocol    = "tcp"
     source_ips  = ["0.0.0.0/0", "::/0"]
-    description = "SSH access (all IPs - restrict later)"
+    description = "SSH access"
   }
   
-  # Supabase API Gateway (Nginx) - port 8000
+  # Supabase API Gateway (Kong) - Main endpoint
   rule {
     direction   = "in"
     port        = "8000"
@@ -54,43 +54,52 @@ resource "hcloud_firewall" "supabase_firewall" {
     description = "Supabase API Gateway"
   }
   
-  # pgAdmin Database Admin Interface - port 3000
+  # Supabase Studio - Admin interface
   rule {
     direction   = "in"
     port        = "3000"
     protocol    = "tcp"
     source_ips  = ["0.0.0.0/0", "::/0"]
-    description = "pgAdmin Database Admin (restrict for production)"
+    description = "Supabase Studio"
   }
   
-  # PostgREST Direct Access - port 3001 (optional, for debugging)
-  rule {
-    direction   = "in"
-    port        = "3001"
-    protocol    = "tcp"
-    source_ips  = ["0.0.0.0/0", "::/0"]
-    description = "PostgREST Direct Access (optional)"
-  }
-  
-  # PostgreSQL Direct Access - port 5432
+  # PostgreSQL Direct Access
   rule {
     direction   = "in"
     port        = "5432"
     protocol    = "tcp"
     source_ips  = ["0.0.0.0/0", "::/0"]
-    description = "PostgreSQL Direct Access (restrict for production)"
+    description = "PostgreSQL Direct Access"
   }
   
-  # Supabase Auth Direct Access - port 9999 (optional, for debugging)
+  # PostgREST Direct Access (optional)
+  rule {
+    direction   = "in"
+    port        = "3001"
+    protocol    = "tcp"
+    source_ips  = ["0.0.0.0/0", "::/0"]
+    description = "PostgREST Direct Access"
+  }
+  
+  # Supabase Auth Direct Access (optional)
   rule {
     direction   = "in"
     port        = "9999"
     protocol    = "tcp"
     source_ips  = ["0.0.0.0/0", "::/0"]
-    description = "Supabase Auth Direct Access (optional)"
+    description = "Supabase Auth Direct Access"
   }
   
-  # HTTP/HTTPS for future SSL termination
+  # pg_meta Direct Access (optional)
+  rule {
+    direction   = "in"
+    port        = "8080"
+    protocol    = "tcp"
+    source_ips  = ["0.0.0.0/0", "::/0"]
+    description = "pg_meta Direct Access"
+  }
+  
+  # HTTP/HTTPS for future SSL
   rule {
     direction   = "in"
     port        = "80"

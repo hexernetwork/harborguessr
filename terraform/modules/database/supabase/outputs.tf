@@ -1,5 +1,4 @@
 # terraform/modules/database/supabase/outputs.tf
-# Outputs from the Lightweight Supabase module
 
 output "server_ip" {
   description = "Public IP address of the Supabase server"
@@ -22,7 +21,7 @@ output "supabase_url" {
 }
 
 output "database_admin_url" {
-  description = "pgAdmin database administration interface"
+  description = "Supabase Studio (Dashboard)"
   value       = "http://${hcloud_server.supabase.ipv4_address}:3000"
 }
 
@@ -47,6 +46,11 @@ output "auth_url" {
   value       = "http://${hcloud_server.supabase.ipv4_address}:9999"
 }
 
+output "meta_url" {
+  description = "pg_meta URL (for debugging)"
+  value       = "http://${hcloud_server.supabase.ipv4_address}:8080"
+}
+
 output "firewall_id" {
   description = "Firewall ID"
   value       = hcloud_firewall.supabase_firewall.id
@@ -60,10 +64,10 @@ output "ssh_key_id" {
 output "setup_complete_message" {
   description = "Setup completion message with access URLs"
   value = <<-EOT
-    🎉 Harbor Guesser Lightweight Supabase deployed successfully!
+    🎉 Harbor Guesser Supabase deployed successfully!
     
     🔗 Main Access Points:
-    📊 Database Admin: http://${hcloud_server.supabase.ipv4_address}:3000
+    📊 Supabase Studio: http://${hcloud_server.supabase.ipv4_address}:3000
     🔌 Supabase API: http://${hcloud_server.supabase.ipv4_address}:8000
     🔍 Health Check: http://${hcloud_server.supabase.ipv4_address}:8000/health
     
@@ -76,6 +80,6 @@ output "setup_complete_message" {
     📋 View credentials: sudo cat /opt/supabase/credentials.txt
     📊 Check status: sudo /opt/supabase/status.sh
     
-    🎮 Harbor Guesser Ready: Auth ✅ | Database ✅ | API ✅ | Admin UI ✅
+    🎮 Harbor Guesser Ready: Auth ✅ | Database ✅ | API ✅ | Studio ✅
   EOT
 }

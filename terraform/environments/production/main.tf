@@ -1,5 +1,4 @@
 # terraform/environments/production/main.tf
-# Harbor Guesser Production Environment
 
 terraform {
   required_version = ">= 1.0"
@@ -28,10 +27,6 @@ module "supabase" {
   server_type    = var.server_type
   location       = var.location
   ssh_public_key = var.ssh_public_key
-  
-  # Security configuration
-  allowed_ssh_ips   = var.allowed_ssh_ips
-  allowed_admin_ips = var.allowed_admin_ips
   
   # Application secrets
   postgres_password = var.postgres_password

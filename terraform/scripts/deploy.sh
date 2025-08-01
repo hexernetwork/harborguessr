@@ -44,16 +44,14 @@ print_status "Deploying Harbor Guesser infrastructure..."
 check_location_and_navigate
 
 # Check if Hetzner token is configured
-if [[ ! -s terraform.tfvars ]] || grep -q '^hcloud_token = ""' terraform.tfvars; then
-    print_error "Hetzner API token not configured!"
+if [[ ! -s terraform.tfvars ]] || grep -q '^hcloud_token = ""' terraform.tfvars || grep -q '^ssh_public_key = ""' terraform.tfvars; then
+    print_error "Required variables not configured!"
     echo ""
-    echo "Please edit terraform/environments/production/terraform.tfvars and add your Hetzner token."
+    echo "Please edit terraform/environments/production/terraform.tfvars and add:"
+    echo 'hcloud_token = "your-hetzner-api-token"'
+    echo 'ssh_public_key = "ssh-rsa your-public-key"'
     echo ""
     echo "Get your token from: https://console.hetzner-cloud.com → Security → API Tokens"
-    echo "Look for the empty hcloud_token field and paste your token there."
-    echo ""
-    echo "Example:"
-    echo 'hcloud_token = "your-actual-token-here"'
     exit 1
 fi
 
@@ -82,15 +80,31 @@ fi
 print_status "Deploying infrastructure..."
 terraform apply -auto-approve
 
-echo ""
-print_success "🎉 Harbor Guesser infrastructure deployed!"
+# Refresh state to ensure outputs are available
+print_status "Refreshing Terraform state..."
+terraform refresh
+
 echo ""
 print_status "📋 Deployment Summary:"
 terraform output
 
+# Get server IP
+SERVER_IP=$(terraform output -raw supabase_server_ip 2>/dev/null || echo "")
+if [[ -z "$SERVER_IP" ]]; then
+    print_error "Output 'supabase_server_ip' not found! Reapplying configuration..."
+    terraform apply -auto-approve
+    SERVER_IP=$(terraform output -raw supabase_server_ip 2>/dev/null || echo "")
+    if [[ -z "$SERVER_IP" ]]; then
+        print_error "Still unable to retrieve 'supabase_server_ip'. Check outputs.tf and state file."
+        exit 1
+    fi
+fi
+
+echo ""
+print_success "🎉 Harbor Guesser infrastructure deployed!"
 echo ""
 print_status "🔄 Next Steps:"
-echo "1. SSH to server: $(terraform output -raw ssh_command)"
+echo "1. SSH to server: ssh -i ../../shared/secrets/harborguessr_rsa root@$SERVER_IP"
 echo "2. Start Supabase: sudo /opt/supabase/start.sh"
 echo "3. View credentials: sudo cat /opt/supabase/credentials.txt"
 echo ""

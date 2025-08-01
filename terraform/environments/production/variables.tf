@@ -1,5 +1,4 @@
 # terraform/environments/production/variables.tf
-# Production environment variables
 
 variable "hcloud_token" {
   description = "Hetzner Cloud API Token"
@@ -34,18 +33,6 @@ variable "location" {
   description = "Hetzner datacenter location"
   type        = string
   default     = "nbg1"  # Nuremberg, Germany
-}
-
-variable "allowed_ssh_ips" {
-  description = "CIDR blocks allowed to SSH"
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "allowed_admin_ips" {
-  description = "CIDR blocks allowed admin access"
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
 }
 
 variable "tags" {
