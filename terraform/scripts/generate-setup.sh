@@ -1,292 +1,534 @@
 #!/bin/bash
-# terraform/scripts/generate-setup.sh
-# Generate secure configuration for Harbor Guesser infrastructure
+# terraform/modules/database/supabase/user_data.sh
+# Robust version that won't stall
 
 set -euo pipefail
 
-# Color output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-print_header() {
-    echo -e "${BLUE}================================================${NC}"
-    echo -e "${BLUE} Harbor Guesser EU-Sovereign Infrastructure${NC}"
-    echo -e "${BLUE} Secure Configuration Generator${NC}"
-    echo -e "${BLUE}================================================${NC}"
-    echo ""
+# Simple logging function that actually works
+log() {
+    local msg="$1"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $msg" | tee -a /var/log/harborguessr-setup.log
 }
 
-print_status() { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log "Starting Harbor Guesser Supabase setup (Robust version)..."
 
-# Check prerequisites
-check_prerequisites() {
-    print_status "Checking prerequisites..."
+# Update system packages
+log "Updating system packages..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get upgrade -y
+
+# Install essential packages in smaller chunks to avoid hangs
+log "Installing essential packages..."
+apt-get install -y curl wget git unzip
+apt-get install -y apt-transport-https ca-certificates gnupg lsb-release
+apt-get install -y fail2ban ufw htop vim postgresql-client jq
+
+# Install Node.js and npm separately
+log "Installing Node.js and npm..."
+apt-get install -y nodejs npm
+
+# Configure fail2ban
+log "Configuring fail2ban..."
+systemctl enable fail2ban
+systemctl start fail2ban
+
+# Install Docker with robust error handling
+log "Installing Docker (robust method)..."
+
+# Method 1: Try official Docker installation
+if ! command -v docker &> /dev/null; then
+    log "Adding Docker GPG key..."
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
     
-    local required_commands=("openssl" "ssh-keygen" "curl")
-    for cmd in "${required_commands[@]}"; do
-        if ! command -v "$cmd" &> /dev/null; then
-            print_error "Required command '$cmd' not found. Please install it and try again."
-            exit 1
-        fi
-    done
+    log "Adding Docker repository..."
+    ARCH=$$(dpkg --print-architecture)
+    CODENAME=$$(lsb_release -cs)
+    echo "deb [arch=$$ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $$CODENAME stable" > /etc/apt/sources.list.d/docker.list
     
-    print_success "All prerequisites satisfied"
+    log "Updating package index..."
+    apt-get update -y
+    
+    log "Installing Docker packages..."
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    
+    log "Starting Docker service..."
+    systemctl start docker
+    systemctl enable docker
+else
+    log "Docker already installed, skipping..."
+fi
+
+# Install Docker Compose standalone (backup method)
+log "Installing Docker Compose standalone..."
+if ! command -v docker-compose &> /dev/null; then
+    COMPOSE_VERSION="2.24.0"
+    curl -L "https://github.com/docker/compose/releases/download/v$$COMPOSE_VERSION/docker-compose-Linux-x86_64" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+fi
+
+# Verify installations
+log "Verifying Docker installation..."
+docker --version || log "ERROR: Docker installation failed"
+docker-compose --version || log "ERROR: Docker Compose installation failed"
+
+# Create supabase user
+log "Creating supabase user..."
+useradd -m -s /bin/bash supabase || true
+usermod -aG docker supabase
+
+# Create directory structure
+log "Setting up directories..."
+mkdir -p /opt/supabase/volumes/db/data
+mkdir -p /opt/supabase/volumes/db/init
+mkdir -p /opt/supabase/volumes/api
+mkdir -p /opt/supabase/volumes/storage
+chown -R supabase:supabase /opt/supabase
+cd /opt/supabase
+
+# Get server IP
+SERVER_IP=$$(curl -s http://ipv4.icanhazip.com/ || echo "localhost")
+log "Server IP: $$SERVER_IP"
+
+# Use Terraform variables
+log "Setting up secrets..."
+JWT_SECRET="${jwt_secret}"
+POSTGRES_PASSWORD="${postgres_password}"
+
+# Generate additional secrets
+DASHBOARD_USERNAME="admin"
+DASHBOARD_PASSWORD=$$(openssl rand -base64 20 | tr -d "=+/" | cut -c1-16)
+SECRET_KEY_BASE=$$(openssl rand -base64 48 | tr -d '\n')
+DB_ENC_KEY=$$(openssl rand -base64 32 | tr -d '\n' | cut -c1-32)
+
+# Create JWT generation script
+log "Creating JWT generator..."
+cat > generate_jwt.js << 'EOJWT'
+const crypto = require('crypto');
+
+function base64URLEscape(str) {
+    return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-# Check we're in the right place
-check_location() {
-    print_status "Checking location..."
-    
-    # We should be in the terraform/scripts directory
-    if [[ ! -f "../environments/production/main.tf" ]]; then
-        print_error "Please run this script from terraform/scripts/ directory"
-        print_error "Current directory: $(pwd)"
-        exit 1
-    fi
-    
-    print_success "Running from correct location"
+function generateJWT(payload, secret) {
+    const header = {"alg": "HS256", "typ": "JWT"};
+    const encodedHeader = base64URLEscape(Buffer.from(JSON.stringify(header)).toString('base64'));
+    const encodedPayload = base64URLEscape(Buffer.from(JSON.stringify(payload)).toString('base64'));
+    const data = encodedHeader + "." + encodedPayload;
+    const signature = crypto.createHmac('sha256', secret).update(data).digest('base64');
+    const encodedSignature = base64URLEscape(signature);
+    return data + "." + encodedSignature;
 }
 
-# Create only missing directories
-create_missing_directories() {
-    print_status "Checking directory structure..."
-    
-    # Only create what's missing
-    mkdir -p ../shared/secrets
-    
-    print_success "Directory structure verified"
-}
+const secret = process.argv[2];
+const role = process.argv[3];
+const payload = {
+    "iss": "supabase",
+    "ref": "harborguessr", 
+    "role": role,
+    "iat": Math.floor(Date.now() / 1000),
+    "exp": Math.floor(Date.now() / 1000) + (10 * 365 * 24 * 60 * 60)
+};
+console.log(generateJWT(payload, secret));
+EOJWT
 
-# Generate SSH key pair
-generate_ssh_key() {
-    print_status "Generating SSH key pair..."
-    
-    local ssh_key_path="../shared/secrets/harborguessr_rsa"
-    
-    if [[ -f "$ssh_key_path" ]]; then
-        print_warning "SSH key already exists, skipping generation"
-        return
-    fi
-    
-    ssh-keygen -t rsa -b 4096 -C "harborguessr@$(whoami)" -f "$ssh_key_path" -N ""
-    
-    print_success "SSH key pair generated: $ssh_key_path"
-}
+# Generate JWT tokens
+log "Generating JWT tokens..."
+ANON_KEY=$$(node generate_jwt.js "$$JWT_SECRET" "anon")
+SERVICE_ROLE_KEY=$$(node generate_jwt.js "$$JWT_SECRET" "service_role")
 
-# Generate secure passwords
-generate_passwords() {
-    print_status "Generating secure passwords..."
-    
-    # Generate PostgreSQL password (25 characters)
-    POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-    
-    # Generate JWT secret (32 characters)
-    JWT_SECRET=$(openssl rand -base64 64 | tr -d "=+/" | cut -c1-32)
-    
-    # Validate password lengths
-    if [[ ${#POSTGRES_PASSWORD} -lt 20 ]]; then
-        print_error "Generated PostgreSQL password is too short"
-        exit 1
-    fi
-    
-    if [[ ${#JWT_SECRET} -lt 30 ]]; then
-        print_error "Generated JWT secret is too short"
-        exit 1
-    fi
-    
-    print_success "Secure passwords generated"
-}
+log "All secrets generated successfully"
 
-# Get current IPv4 address only
-get_current_ip() {
-    print_status "Detecting your current IPv4 address..."
-    
-    CURRENT_IP=""
-    local ip_services=("ipv4.icanhazip.com" "checkip.amazonaws.com" "ifconfig.me/ip")
-    
-    for service in "${ip_services[@]}"; do
-        if CURRENT_IP=$(curl -s --max-time 5 "http://$service" 2>/dev/null); then
-            # Validate IPv4 format and ensure it's not IPv6
-            if [[ $CURRENT_IP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [[ ! $CURRENT_IP =~ : ]]; then
-                break
-            fi
-        fi
-        CURRENT_IP=""
-    done
-    
-    if [[ -z "$CURRENT_IP" ]]; then
-        print_warning "Could not detect your IPv4 address automatically"
-        CURRENT_IP="0.0.0.0"
-        print_warning "Using 0.0.0.0 (allows access from anywhere)"
-    else
-        print_success "Detected your IPv4 address: $CURRENT_IP"
-    fi
-}
+# Create environment file
+log "Creating environment configuration..."
+cat > .env << EOENV
+POSTGRES_PASSWORD=$$POSTGRES_PASSWORD
+JWT_SECRET=$$JWT_SECRET
+ANON_KEY=$$ANON_KEY
+SERVICE_ROLE_KEY=$$SERVICE_ROLE_KEY
+SECRET_KEY_BASE=$$SECRET_KEY_BASE
+DB_ENC_KEY=$$DB_ENC_KEY
+SITE_URL=http://$$SERVER_IP:8000
+SUPABASE_PUBLIC_URL=http://$$SERVER_IP:8000
+DASHBOARD_USERNAME=$$DASHBOARD_USERNAME
+DASHBOARD_PASSWORD=$$DASHBOARD_PASSWORD
+STUDIO_DEFAULT_ORGANIZATION=Harbor Guesser
+STUDIO_DEFAULT_PROJECT=Production
+SERVER_IP=$$SERVER_IP
+EOENV
 
-# Create Terraform configuration
-create_terraform_config() {
-    print_status "Creating Terraform configuration..."
-    
-    # Read SSH public key and ensure it's on one line
-    local ssh_public_key
-    ssh_public_key=$(cat ../shared/secrets/harborguessr_rsa.pub | tr -d '\n\r')
-    
-    # Ensure passwords are single line and properly escaped
-    local clean_postgres_password
-    local clean_jwt_secret
-    clean_postgres_password=$(echo "$POSTGRES_PASSWORD" | tr -d '\n\r')
-    clean_jwt_secret=$(echo "$JWT_SECRET" | tr -d '\n\r')
-    
-    # Check if terraform.tfvars already exists
-    if [[ -f "../environments/production/terraform.tfvars" ]]; then
-        print_warning "terraform.tfvars already exists"
-        read -p "Overwrite existing configuration? (y/N): " -n 1 -r
-        echo ""
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_status "Keeping existing configuration"
-            return
-        fi
-    fi
-    
-    cat > ../environments/production/terraform.tfvars << EOF
-# Harbor Guesser Production Infrastructure Configuration
-# 🔐 SECURE: Auto-generated configuration with random passwords
-# Generated: $(date)
-# 
-# IMPORTANT: Add your Hetzner API token below before deploying!
+# Create Docker Compose file
+log "Creating Docker Compose configuration..."
+cat > docker-compose.yml << 'EODCOMPOSE'
+name: harborguessr-supabase
 
-# Hetzner Cloud API Token (REQUIRED - GET FROM HETZNER CONSOLE)
-# Get from: https://console.hetzner-cloud.com → Security → API Tokens
-# NEVER commit this token to git!
-hcloud_token = ""
+services:
+  db:
+    container_name: supabase-db
+    image: supabase/postgres:15.1.0.147
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+    volumes:
+      - ./volumes/db/data:/var/lib/postgresql/data
+      - ./volumes/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-# SSH Public Key (auto-generated)
-ssh_public_key = "$ssh_public_key"
+  auth:
+    container_name: supabase-auth
+    image: supabase/gotrue:v2.143.0
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:$${POSTGRES_PASSWORD}@db:5432/postgres?sslmode=disable
+      GOTRUE_SITE_URL: $${SITE_URL}
+      GOTRUE_JWT_SECRET: $${JWT_SECRET}
+      GOTRUE_DISABLE_SIGNUP: false
+      GOTRUE_MAILER_AUTOCONFIRM: true
 
-# Database Credentials (auto-generated, secure)
-postgres_password = "$clean_postgres_password"
-jwt_secret = "$clean_jwt_secret"
+  rest:
+    container_name: supabase-rest
+    image: postgrest/postgrest:v12.0.2
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      PGRST_DB_URI: postgres://authenticator:$${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: $${JWT_SECRET}
 
-# Security Configuration (auto-detected IPv4 only)
-allowed_ssh_ips = ["$CURRENT_IP/32"]
-allowed_admin_ips = ["$CURRENT_IP/32"]
+  realtime:
+    container_name: supabase-realtime
+    image: supabase/realtime:v2.25.50
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: $${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_ENC_KEY: $${DB_ENC_KEY}
+      API_JWT_SECRET: $${JWT_SECRET}
+      SECRET_KEY_BASE: $${SECRET_KEY_BASE}
 
-# Server Configuration
-server_type = "cpx11"  # €3.85/month - 2 vCPU, 2GB RAM
-location = "nbg1"      # Nuremberg, Germany
+  storage:
+    container_name: supabase-storage
+    image: supabase/storage-api:v0.46.4
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      ANON_KEY: $${ANON_KEY}
+      SERVICE_KEY: $${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: $${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:$${POSTGRES_PASSWORD}@db:5432/postgres
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+    volumes:
+      - ./volumes/storage:/var/lib/storage
 
-# Resource Tags
-tags = {
-  project     = "harborguessr"
-  service     = "supabase"
-  environment = "production"
-  managed_by  = "terraform"
-}
-EOF
-    
-    print_success "Terraform configuration created"
-}
+  meta:
+    container_name: supabase-meta
+    image: supabase/postgres-meta:v0.68.0
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: $${POSTGRES_PASSWORD}
 
-# Update root .gitignore
-update_root_gitignore() {
-    print_status "Updating root .gitignore..."
-    
-    # Go to repo root (2 levels up from scripts)
-    local root_gitignore="../../.gitignore"
-    
-    local gitignore_entries=(
-        ""
-        "# Harbor Guesser Infrastructure Secrets"
-        "terraform/shared/secrets/"
-        "terraform/environments/*/terraform.tfvars"
-        "terraform/environments/*/.terraform/"
-        "terraform/environments/*/terraform.tfstate*"
-        "terraform/environments/*/.terraform.lock.hcl"
-        "terraform/**/.env"
-    )
-    
-    # Create .gitignore if it doesn't exist
-    touch "$root_gitignore"
-    
-    # Check if entries already exist
-    local needs_update=false
-    for entry in "${gitignore_entries[@]}"; do
-        if [[ -n "$entry" ]] && ! grep -Fxq "$entry" "$root_gitignore"; then
-            needs_update=true
-            break
-        fi
-    done
-    
-    if [[ "$needs_update" == true ]]; then
-        for entry in "${gitignore_entries[@]}"; do
-            echo "$entry" >> "$root_gitignore"
-        done
-        print_success "Root .gitignore updated with infrastructure secrets"
-    else
-        print_success "Root .gitignore already configured"
-    fi
-}
+  kong:
+    container_name: supabase-kong
+    image: kong:2.8.1-alpine
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_PLUGINS: request-transformer,cors,key-auth
+    volumes:
+      - ./volumes/api/kong.yml:/var/lib/kong/kong.yml:ro
+    depends_on:
+      - auth
+      - rest
+      - realtime
+      - storage
+      - meta
 
-# Set secure file permissions
-set_permissions() {
-    print_status "Setting secure file permissions..."
-    
-    chmod 600 ../environments/production/terraform.tfvars
-    chmod 600 ../shared/secrets/harborguessr_rsa
-    chmod 644 ../shared/secrets/harborguessr_rsa.pub
-    
-    print_success "Secure file permissions set"
-}
+  studio:
+    container_name: supabase-studio
+    image: supabase/studio:20240326-5e5586d
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: $${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: $${ANON_KEY}
+      SUPABASE_SERVICE_KEY: $${SERVICE_ROLE_KEY}
+    depends_on:
+      - db
+      - meta
+      - kong
+EODCOMPOSE
 
-# Display setup summary
-show_summary() {
-    echo ""
-    echo -e "${GREEN}================================================${NC}"
-    echo -e "${GREEN} Setup Complete! 🎉${NC}"
-    echo -e "${GREEN}================================================${NC}"
-    echo ""
-    echo -e "${BLUE}🔐 Security Features:${NC}"
-    echo "   ├── All secrets auto-generated and gitignored"
-    echo "   ├── SSH access restricted to your IPv4: $CURRENT_IP"
-    echo "   ├── Admin access restricted to your IPv4: $CURRENT_IP"
-    echo "   ├── 25+ character PostgreSQL password"
-    echo "   ├── 32+ character JWT secret"
-    echo "   └── Secure file permissions (600) applied"
-    echo ""
-    echo -e "${BLUE}🔄 Next Steps:${NC}"
-    echo "   1. Get Hetzner API token: https://console.hetzner-cloud.com"
-    echo "   2. Edit terraform/environments/production/terraform.tfvars"
-    echo "   3. Add your token: hcloud_token = \"your-token-here\""
-    echo "   4. Deploy: ./deploy.sh"
-    echo ""
-    echo -e "${BLUE}📁 Generated Files:${NC}"
-    echo "   ├── terraform/shared/secrets/harborguessr_rsa (private key)"
-    echo "   ├── terraform/shared/secrets/harborguessr_rsa.pub (public key)"
-    echo "   └── terraform/environments/production/terraform.tfvars (config)"
-    echo ""
-    echo -e "${GREEN}Ready to deploy your EU-sovereign Harbor Guesser infrastructure! 🇪🇺${NC}"
-}
+# Create database initialization
+log "Creating database initialization..."
+cat > volumes/db/init/01-init.sql << 'EOSQL'
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-# Main execution
-main() {
-    print_header
-    check_prerequisites
-    check_location
-    create_missing_directories
-    generate_ssh_key
-    generate_passwords
-    get_current_ip
-    create_terraform_config
-    update_root_gitignore
-    set_permissions
-    show_summary
-}
+-- Create roles
+CREATE ROLE anon NOLOGIN NOINHERIT;
+CREATE ROLE authenticated NOLOGIN NOINHERIT;
+CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
+CREATE ROLE supabase_auth_admin NOINHERIT CREATEROLE LOGIN PASSWORD 'REPLACE_PASSWORD';
+CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'REPLACE_PASSWORD';
+CREATE ROLE supabase_admin NOINHERIT CREATEROLE LOGIN PASSWORD 'REPLACE_PASSWORD';
+CREATE ROLE supabase_storage_admin NOINHERIT CREATEROLE LOGIN PASSWORD 'REPLACE_PASSWORD';
 
-# Execute main function
-main "$@"
+-- Grant memberships
+GRANT anon TO authenticator;
+GRANT authenticated TO authenticator;
+GRANT service_role TO authenticator;
+
+-- Create schemas
+CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
+CREATE SCHEMA storage AUTHORIZATION supabase_storage_admin;
+CREATE SCHEMA realtime AUTHORIZATION supabase_admin;
+CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;
+
+-- Grant permissions
+GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON SCHEMA auth TO supabase_auth_admin;
+GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
+
+-- Application tables
+CREATE TABLE public.games (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID,
+    location_name TEXT,
+    guess_lat DECIMAL,
+    guess_lng DECIMAL,
+    actual_lat DECIMAL,
+    actual_lng DECIMAL,
+    distance_km INTEGER,
+    score INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE public.leaderboard (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID,
+    username TEXT,
+    total_score INTEGER DEFAULT 0,
+    games_played INTEGER DEFAULT 0,
+    avg_distance_km DECIMAL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE public.games ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.leaderboard ENABLE ROW LEVEL SECURITY;
+
+-- Create policies
+CREATE POLICY "Public access" ON public.games FOR ALL USING (true);
+CREATE POLICY "Public access" ON public.leaderboard FOR ALL USING (true);
+
+-- Grant permissions
+GRANT ALL ON public.games TO anon, authenticated, service_role;
+GRANT ALL ON public.leaderboard TO anon, authenticated, service_role;
+EOSQL
+
+# Replace password placeholder
+sed -i "s/REPLACE_PASSWORD/$$POSTGRES_PASSWORD/g" volumes/db/init/01-init.sql
+
+# Create Kong config
+log "Creating Kong configuration..."
+cat > volumes/api/kong.yml << 'EOKONG'
+_format_version: "2.1"
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: $${ANON_KEY}
+  - username: service_role
+    keyauth_credentials:
+      - key: $${SERVICE_ROLE_KEY}
+
+services:
+  - name: auth-v1
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - "/auth/v1/"
+    plugins:
+      - name: cors
+
+  - name: rest-v1
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - "/rest/v1/"
+    plugins:
+      - name: cors
+      - name: key-auth
+
+  - name: realtime-v1
+    url: http://realtime:4000/socket/
+    routes:
+      - name: realtime-v1-all
+        strip_path: true
+        paths:
+          - "/realtime/v1/"
+    plugins:
+      - name: cors
+      - name: key-auth
+
+  - name: storage-v1
+    url: http://storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - "/storage/v1/"
+    plugins:
+      - name: cors
+
+  - name: meta
+    url: http://meta:8080/
+    routes:
+      - name: meta-all
+        strip_path: true
+        paths:
+          - "/pg/"
+    plugins:
+      - name: key-auth
+
+plugins:
+  - name: cors
+    config:
+      origins: ["*"]
+      methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      headers: [Accept, Authorization, Content-Type, apikey]
+      credentials: true
+EOKONG
+
+# Set ownership
+chown -R supabase:supabase /opt/supabase
+
+# Create start script
+log "Creating startup script..."
+cat > start.sh << 'EOSTART'
+#!/bin/bash
+set -e
+cd /opt/supabase
+
+echo "🚀 Starting Harbor Guesser Supabase..."
+
+docker-compose pull
+docker-compose up -d db
+
+echo "⏳ Waiting for database..."
+sleep 30
+
+docker-compose up -d auth rest realtime storage meta
+sleep 30
+
+docker-compose up -d kong studio
+sleep 30
+
+echo "✅ Supabase started!"
+source .env
+echo "📊 Studio: http://$SERVER_IP:3000"
+echo "🔌 API: http://$SERVER_IP:8000"
+echo "🔑 Anon Key: $ANON_KEY"
+EOSTART
+
+chmod +x start.sh
+
+# Create credentials file
+log "Creating credentials..."
+cat > credentials.txt << EOCREDS
+Harbor Guesser Supabase
+======================
+
+🌐 URLs:
+- Studio: http://$$SERVER_IP:3000
+- API: http://$$SERVER_IP:8000
+
+🔐 Login:
+- Username: $$DASHBOARD_USERNAME
+- Password: $$DASHBOARD_PASSWORD
+
+🔑 Keys:
+- Anon: $$ANON_KEY
+- Service: $$SERVICE_ROLE_KEY
+- JWT Secret: $$JWT_SECRET
+
+🗄️ Database:
+- Host: $$SERVER_IP:5432
+- Password: $$POSTGRES_PASSWORD
+
+💻 Frontend:
+NEXT_PUBLIC_SUPABASE_URL=http://$$SERVER_IP:8000
+NEXT_PUBLIC_SUPABASE_ANON_KEY=$$ANON_KEY
+EOCREDS
+
+chmod 600 credentials.txt
+
+# Start services
+log "Starting Supabase services..."
+sudo -u supabase ./start.sh
+
+log "Waiting for services to initialize..."
+sleep 90
+
+log "✅ Harbor Guesser Supabase setup complete!"
+log "📊 Studio: http://$$SERVER_IP:3000"
+log "🔌 API: http://$$SERVER_IP:8000"
+log "📋 Credentials: /opt/supabase/credentials.txt"

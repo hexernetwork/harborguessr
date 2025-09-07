@@ -35,9 +35,7 @@ case $choice in
         
         # Update terraform.tfvars
         cd ../environments/production
-        sed -i.bak "s/allowed_ssh_ips = \[.*\]/allowed_ssh_ips = [\"$CURRENT_IP\/32\"]/" terraform.tfvars
-        sed -i.bak "s/allowed_admin_ips = \[.*\]/allowed_admin_ips = [\"$CURRENT_IP\/32\"]/" terraform.tfvars
-        
+
         # Apply changes
         terraform apply -auto-approve
         
@@ -70,13 +68,10 @@ case $choice in
         
         print_status "Updating firewall rules..."
         cd ../environments/production
-        sed -i.bak "s/allowed_ssh_ips = \[.*\]/allowed_ssh_ips = [$IP_LIST]/" terraform.tfvars
-        sed -i.bak "s/allowed_admin_ips = \[.*\]/allowed_admin_ips = [$IP_LIST]/" terraform.tfvars
         
         # Apply changes
         terraform apply -auto-approve
         
-        print_success "✅ Security updated! Access restricted to: ${IPS[*]}"
         ;;
         
     3)

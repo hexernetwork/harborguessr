@@ -1,172 +1,278 @@
 #!/bin/bash
 # terraform/modules/database/supabase/user_data.sh
+# Robust version that won't stall
 
 set -euo pipefail
 
-# Logging function
+# Simple logging function that actually works
 log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" | tee -a /var/log/harborguessr-setup.log
+    local msg="$1"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $msg" | tee -a /var/log/harborguessr-setup.log
 }
 
-log "Starting Harbor Guesser FINAL WORKING Supabase setup..."
+log "Starting Harbor Guesser Supabase setup (Robust version)..."
 
 # Update system packages
 log "Updating system packages..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
+apt-get update -y
 apt-get upgrade -y
 
-# Install essential packages
+# Install essential packages in smaller chunks to avoid hangs
 log "Installing essential packages..."
-apt-get install -y \
-    curl \
-    wget \
-    git \
-    unzip \
-    apt-transport-https \
-    ca-certificates \
-    gnupg \
-    lsb-release \
-    fail2ban \
-    ufw \
-    htop \
-    vim \
-    postgresql-client \
-    jq
+apt-get install -y curl wget git unzip
+apt-get install -y apt-transport-https ca-certificates gnupg lsb-release
+apt-get install -y fail2ban ufw htop vim postgresql-client jq
 
-# Configure fail2ban for SSH protection
+# Install Node.js and npm separately
+log "Installing Node.js and npm..."
+apt-get install -y nodejs npm
+
+# Configure fail2ban
 log "Configuring fail2ban..."
 systemctl enable fail2ban
 systemctl start fail2ban
 
-# Install Docker
-log "Installing Docker..."
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+# Install Docker with robust error handling
+log "Installing Docker (robust method)..."
 
-# Start and enable Docker
-systemctl start docker
-systemctl enable docker
+# Method 1: Try official Docker installation
+if ! command -v docker &> /dev/null; then
+    log "Adding Docker GPG key..."
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    
+    log "Adding Docker repository..."
+    ARCH=$$(dpkg --print-architecture)
+    CODENAME=$$(lsb_release -cs)
+    echo "deb [arch=$$ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $$CODENAME stable" > /etc/apt/sources.list.d/docker.list
+    
+    log "Updating package index..."
+    apt-get update -y
+    
+    log "Installing Docker packages..."
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    
+    log "Starting Docker service..."
+    systemctl start docker
+    systemctl enable docker
+else
+    log "Docker already installed, skipping..."
+fi
 
-# Install Docker Compose standalone
-log "Installing Docker Compose..."
-COMPOSE_VERSION="2.24.0"
-curl -L "https://github.com/docker/compose/releases/download/v$COMPOSE_VERSION/docker-compose-Linux-x86_64" -o /usr/local/bin/docker-compose
-chmod +x /usr/local/bin/docker-compose
+# Install Docker Compose standalone (backup method)
+log "Installing Docker Compose standalone..."
+if ! command -v docker-compose &> /dev/null; then
+    COMPOSE_VERSION="2.24.0"
+    curl -L "https://github.com/docker/compose/releases/download/v$$COMPOSE_VERSION/docker-compose-Linux-x86_64" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+fi
 
-# Create supabase user for security
-log "Creating supabase service user..."
-useradd -m -s /bin/bash supabase
+# Verify installations
+log "Verifying Docker installation..."
+docker --version || log "ERROR: Docker installation failed"
+docker-compose --version || log "ERROR: Docker Compose installation failed"
+
+# Create supabase user
+log "Creating supabase user..."
+useradd -m -s /bin/bash supabase || true
 usermod -aG docker supabase
 
-# Create Supabase directory
-log "Setting up Supabase directory..."
-mkdir -p /opt/supabase/{volumes/api,scripts}
+# Create directory structure
+log "Setting up directories..."
+mkdir -p /opt/supabase/volumes/db/data
+mkdir -p /opt/supabase/volumes/db/init
+mkdir -p /opt/supabase/volumes/api
+mkdir -p /opt/supabase/volumes/storage
 chown -R supabase:supabase /opt/supabase
 cd /opt/supabase
 
-# Get server IP dynamically
-SERVER_IP=$(curl -s http://ipv4.icanhazip.com/ || echo "localhost")
-log "Server IP detected: $SERVER_IP"
+# Get server IP
+SERVER_IP=$$(curl -s http://ipv4.icanhazip.com/ || echo "localhost")
+log "Server IP: $$SERVER_IP"
 
-# Generate JWT keys
-log "Generating JWT tokens..."
+# Use Terraform variables
+log "Setting up secrets..."
 JWT_SECRET="${jwt_secret}"
+POSTGRES_PASSWORD="${postgres_password}"
 
-# Generate ANON key
-ANON_PAYLOAD='{"iss":"supabase","ref":"harborguessr","role":"anon","iat":1641254400,"exp":1956614400}'
-ANON_HEADER='{"alg":"HS256","typ":"JWT"}'
+# Generate additional secrets
+DASHBOARD_USERNAME="admin"
+DASHBOARD_PASSWORD=$$(openssl rand -base64 20 | tr -d "=+/" | cut -c1-16)
+SECRET_KEY_BASE=$$(openssl rand -base64 48 | tr -d '\n')
+DB_ENC_KEY=$$(openssl rand -base64 32 | tr -d '\n' | cut -c1-32)
 
-ANON_HEADER_B64=$(echo -n "$ANON_HEADER" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-ANON_PAYLOAD_B64=$(echo -n "$ANON_PAYLOAD" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-ANON_SIGNATURE=$(echo -n "$ANON_HEADER_B64.$ANON_PAYLOAD_B64" | openssl dgst -sha256 -hmac "$JWT_SECRET" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-ANON_KEY="$ANON_HEADER_B64.$ANON_PAYLOAD_B64.$ANON_SIGNATURE"
+# Create JWT generation script
+log "Creating JWT generator..."
+cat > generate_jwt.js << 'EOJWT'
+const crypto = require('crypto');
 
-# Generate SERVICE_ROLE key
-SERVICE_PAYLOAD='{"iss":"supabase","ref":"harborguessr","role":"service_role","iat":1641254400,"exp":1956614400}'
-SERVICE_HEADER='{"alg":"HS256","typ":"JWT"}'
+function base64URLEscape(str) {
+    return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
 
-SERVICE_HEADER_B64=$(echo -n "$SERVICE_HEADER" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-SERVICE_PAYLOAD_B64=$(echo -n "$SERVICE_PAYLOAD" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-SERVICE_SIGNATURE=$(echo -n "$SERVICE_HEADER_B64.$SERVICE_PAYLOAD_B64" | openssl dgst -sha256 -hmac "$JWT_SECRET" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-SERVICE_ROLE_KEY="$SERVICE_HEADER_B64.$SERVICE_PAYLOAD_B64.$SERVICE_SIGNATURE"
+function generateJWT(payload, secret) {
+    const header = {"alg": "HS256", "typ": "JWT"};
+    const encodedHeader = base64URLEscape(Buffer.from(JSON.stringify(header)).toString('base64'));
+    const encodedPayload = base64URLEscape(Buffer.from(JSON.stringify(payload)).toString('base64'));
+    const data = encodedHeader + "." + encodedPayload;
+    const signature = crypto.createHmac('sha256', secret).update(data).digest('base64');
+    const encodedSignature = base64URLEscape(signature);
+    return data + "." + encodedSignature;
+}
 
-log "Generated ANON key: $ANON_KEY"
-log "Generated SERVICE key: $${SERVICE_ROLE_KEY:0:20}..."
+const secret = process.argv[2];
+const role = process.argv[3];
+const payload = {
+    "iss": "supabase",
+    "ref": "harborguessr", 
+    "role": role,
+    "iat": Math.floor(Date.now() / 1000),
+    "exp": Math.floor(Date.now() / 1000) + (10 * 365 * 24 * 60 * 60)
+};
+console.log(generateJWT(payload, secret));
+EOJWT
 
-# Create WORKING docker-compose with proper database init
-log "Creating WORKING Supabase docker-compose..."
-cat > docker-compose.yml << EOF
-version: '3.8'
+# Generate JWT tokens
+log "Generating JWT tokens..."
+ANON_KEY=$$(node generate_jwt.js "$$JWT_SECRET" "anon")
+SERVICE_ROLE_KEY=$$(node generate_jwt.js "$$JWT_SECRET" "service_role")
+
+log "All secrets generated successfully"
+
+# Create environment file
+log "Creating environment configuration..."
+cat > .env << EOENV
+POSTGRES_PASSWORD=$$POSTGRES_PASSWORD
+JWT_SECRET=$$JWT_SECRET
+ANON_KEY=$$ANON_KEY
+SERVICE_ROLE_KEY=$$SERVICE_ROLE_KEY
+SECRET_KEY_BASE=$$SECRET_KEY_BASE
+DB_ENC_KEY=$$DB_ENC_KEY
+SITE_URL=http://$$SERVER_IP:8000
+SUPABASE_PUBLIC_URL=http://$$SERVER_IP:8000
+DASHBOARD_USERNAME=$$DASHBOARD_USERNAME
+DASHBOARD_PASSWORD=$$DASHBOARD_PASSWORD
+STUDIO_DEFAULT_ORGANIZATION=Harbor Guesser
+STUDIO_DEFAULT_PROJECT=Production
+SERVER_IP=$$SERVER_IP
+EOENV
+
+# Create Docker Compose file
+log "Creating Docker Compose configuration..."
+cat > docker-compose.yml << 'EODCOMPOSE'
+name: harborguessr-supabase
 
 services:
-  # PostgreSQL Database - Using regular postgres with custom init
   db:
     container_name: supabase-db
-    image: postgres:15-alpine
+    image: supabase/postgres:15.1.0.147
     restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_PASSWORD: ${postgres_password}
+      POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
-      POSTGRES_INITDB_ARGS: "--auth-host=md5"
     volumes:
-      - db-data:/var/lib/postgresql/data
-      - ./scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./volumes/db/data:/var/lib/postgresql/data
+      - ./volumes/db/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 5
+      start_period: 30s
 
-  # PostgREST API
-  rest:
-    container_name: supabase-rest
-    image: postgrest/postgrest:v12.0.2
-    restart: unless-stopped
-    ports:
-      - "3001:3000"
-    environment:
-      PGRST_DB_URI: postgres://authenticator:${postgres_password}@db:5432/postgres
-      PGRST_DB_SCHEMAS: public
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${jwt_secret}
-      PGRST_DB_USE_LEGACY_GUCS: "false"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  # Supabase Auth (GoTrue)
   auth:
     container_name: supabase-auth
     image: supabase/gotrue:v2.143.0
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     ports:
       - "9999:9999"
     environment:
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${postgres_password}@db:5432/postgres
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: http://$SERVER_IP:8000
-      GOTRUE_SITE_URL: https://harborguessr.com
-      GOTRUE_URI_ALLOW_LIST: "http://localhost:3000,https://harborguessr.com,http://$SERVER_IP:3000"
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:$${POSTGRES_PASSWORD}@db:5432/postgres?sslmode=disable
+      GOTRUE_SITE_URL: $${SITE_URL}
+      GOTRUE_JWT_SECRET: $${JWT_SECRET}
       GOTRUE_DISABLE_SIGNUP: false
-      GOTRUE_JWT_SECRET: ${jwt_secret}
-      GOTRUE_JWT_EXP: 3600
-      GOTRUE_JWT_AUD: authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: false
       GOTRUE_MAILER_AUTOCONFIRM: true
+
+  rest:
+    container_name: supabase-rest
+    image: postgrest/postgrest:v12.0.2
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      PGRST_DB_URI: postgres://authenticator:$${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: $${JWT_SECRET}
 
-  # Kong API Gateway
+  realtime:
+    container_name: supabase-realtime
+    image: supabase/realtime:v2.25.50
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: $${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_ENC_KEY: $${DB_ENC_KEY}
+      API_JWT_SECRET: $${JWT_SECRET}
+      SECRET_KEY_BASE: $${SECRET_KEY_BASE}
+
+  storage:
+    container_name: supabase-storage
+    image: supabase/storage-api:v0.46.4
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      ANON_KEY: $${ANON_KEY}
+      SERVICE_KEY: $${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: $${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:$${POSTGRES_PASSWORD}@db:5432/postgres
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+    volumes:
+      - ./volumes/storage:/var/lib/storage
+
+  meta:
+    container_name: supabase-meta
+    image: supabase/postgres-meta:v0.68.0
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: $${POSTGRES_PASSWORD}
+
   kong:
     container_name: supabase-kong
     image: kong:2.8.1-alpine
@@ -176,31 +282,16 @@ services:
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_PLUGINS: request-transformer,cors,key-auth
     volumes:
       - ./volumes/api/kong.yml:/var/lib/kong/kong.yml:ro
     depends_on:
       - auth
       - rest
+      - realtime
+      - storage
+      - meta
 
-  # pg_meta for Supabase Studio
-  meta:
-    container_name: supabase-meta
-    image: supabase/postgres-meta:v0.68.0
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      PG_META_PORT: 8080
-      PG_META_DB_HOST: db
-      PG_META_DB_PORT: 5432
-      PG_META_DB_NAME: postgres
-      PG_META_DB_USER: supabase_admin
-      PG_META_DB_PASSWORD: ${postgres_password}
-    depends_on:
-      db:
-        condition: service_healthy
-
-  # REAL Supabase Studio Dashboard
   studio:
     container_name: supabase-studio
     image: supabase/studio:20240326-5e5586d
@@ -208,108 +299,53 @@ services:
     ports:
       - "3000:3000"
     environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
       SUPABASE_URL: http://kong:8000
-      SUPABASE_ANON_KEY: $ANON_KEY
-      SUPABASE_SERVICE_KEY: $SERVICE_ROLE_KEY
+      SUPABASE_PUBLIC_URL: $${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: $${ANON_KEY}
+      SUPABASE_SERVICE_KEY: $${SERVICE_ROLE_KEY}
     depends_on:
-      - kong
+      - db
       - meta
+      - kong
+EODCOMPOSE
 
-volumes:
-  db-data:
-EOF
-
-# Create database initialization SQL file (this will actually work)
-log "Creating database initialization SQL..."
-cat > scripts/init.sql << EOF
--- Enable necessary extensions
+# Create database initialization
+log "Creating database initialization..."
+cat > volumes/db/init/01-init.sql << 'EOSQL'
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Create auth schema
-CREATE SCHEMA IF NOT EXISTS auth;
-
 -- Create roles
-CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD '${postgres_password}';
-CREATE ROLE anon NOLOGIN;
-CREATE ROLE authenticated NOLOGIN;
-CREATE ROLE supabase_auth_admin NOINHERIT CREATEROLE LOGIN PASSWORD '${postgres_password}';
-CREATE ROLE supabase_admin SUPERUSER LOGIN PASSWORD '${postgres_password}';
+CREATE ROLE anon NOLOGIN NOINHERIT;
+CREATE ROLE authenticated NOLOGIN NOINHERIT;
+CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
+CREATE ROLE supabase_auth_admin NOINHERIT CREATEROLE LOGIN PASSWORD 'REPLACE_PASSWORD';
+CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'REPLACE_PASSWORD';
+CREATE ROLE supabase_admin NOINHERIT CREATEROLE LOGIN PASSWORD 'REPLACE_PASSWORD';
+CREATE ROLE supabase_storage_admin NOINHERIT CREATEROLE LOGIN PASSWORD 'REPLACE_PASSWORD';
 
--- Grant permissions
-GRANT authenticator TO postgres;
+-- Grant memberships
 GRANT anon TO authenticator;
 GRANT authenticated TO authenticator;
-GRANT ALL ON SCHEMA public TO authenticator;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticator;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticator;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO authenticator;
+GRANT service_role TO authenticator;
 
--- Auth schema permissions
+-- Create schemas
+CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
+CREATE SCHEMA storage AUTHORIZATION supabase_storage_admin;
+CREATE SCHEMA realtime AUTHORIZATION supabase_admin;
+CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;
+
+-- Grant permissions
+GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL ON SCHEMA auth TO supabase_auth_admin;
-GRANT authenticator TO supabase_auth_admin;
+GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
 
--- CRITICAL FIX: Grant proper permissions for auth migrations
-GRANT ALL ON SCHEMA public TO supabase_auth_admin;
-GRANT CREATE ON DATABASE postgres TO supabase_auth_admin;
-GRANT ALL PRIVILEGES ON SCHEMA public TO supabase_auth_admin;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO supabase_auth_admin;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO supabase_auth_admin;
-
--- Create auth.uid() function
-CREATE OR REPLACE FUNCTION auth.uid() 
-RETURNS UUID 
-LANGUAGE SQL STABLE
-AS \$\$
-  SELECT 
-    COALESCE(
-        NULLIF(current_setting('request.jwt.claim.sub', true), ''),
-        (NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
-    )::UUID
-\$\$;
-
--- Create users table in auth schema
-CREATE TABLE IF NOT EXISTS auth.users (
-    instance_id UUID,
+-- Application tables
+CREATE TABLE public.games (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    aud VARCHAR(255),
-    role VARCHAR(255),
-    email VARCHAR(255) UNIQUE,
-    encrypted_password VARCHAR(255),
-    email_confirmed_at TIMESTAMPTZ,
-    invited_at TIMESTAMPTZ,
-    confirmation_token VARCHAR(255),
-    confirmation_sent_at TIMESTAMPTZ,
-    recovery_token VARCHAR(255),
-    recovery_sent_at TIMESTAMPTZ,
-    email_change_token_new VARCHAR(255),
-    email_change VARCHAR(255),
-    email_change_sent_at TIMESTAMPTZ,
-    last_sign_in_at TIMESTAMPTZ,
-    raw_app_meta_data JSONB,
-    raw_user_meta_data JSONB,
-    is_super_admin BOOLEAN,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    phone VARCHAR(15),
-    phone_confirmed_at TIMESTAMPTZ,
-    phone_change VARCHAR(15),
-    phone_change_token VARCHAR(255),
-    phone_change_sent_at TIMESTAMPTZ,
-    confirmed_at TIMESTAMPTZ GENERATED ALWAYS AS (LEAST(email_confirmed_at, phone_confirmed_at)) STORED,
-    email_change_token_current VARCHAR(255) DEFAULT '',
-    email_change_confirm_status SMALLINT DEFAULT 0,
-    banned_until TIMESTAMPTZ,
-    reauthentication_token VARCHAR(255),
-    reauthentication_sent_at TIMESTAMPTZ,
-    is_sso_user BOOLEAN DEFAULT FALSE,
-    deleted_at TIMESTAMPTZ
-);
-
--- Harbor Guesser tables
-CREATE TABLE IF NOT EXISTS public.games (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth.users(id),
+    user_id UUID,
     location_name TEXT,
     guess_lat DECIMAL,
     guess_lng DECIMAL,
@@ -320,9 +356,9 @@ CREATE TABLE IF NOT EXISTS public.games (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.leaderboard (
+CREATE TABLE public.leaderboard (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth.users(id),
+    user_id UUID,
     username TEXT,
     total_score INTEGER DEFAULT 0,
     games_played INTEGER DEFAULT 0,
@@ -331,42 +367,34 @@ CREATE TABLE IF NOT EXISTS public.leaderboard (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security
+-- Enable RLS
 ALTER TABLE public.games ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leaderboard ENABLE ROW LEVEL SECURITY;
 
--- Create RLS policies
-CREATE POLICY "Users can view own games" ON public.games
-    FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own games" ON public.games
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Anyone can view leaderboard" ON public.leaderboard
-    FOR SELECT TO anon, authenticated USING (true);
-
-CREATE POLICY "Authenticated users can update own leaderboard" ON public.leaderboard
-    FOR ALL TO authenticated USING (auth.uid() = user_id);
+-- Create policies
+CREATE POLICY "Public access" ON public.games FOR ALL USING (true);
+CREATE POLICY "Public access" ON public.leaderboard FOR ALL USING (true);
 
 -- Grant permissions
-GRANT SELECT ON public.leaderboard TO anon;
-GRANT ALL ON public.games TO authenticated;
-GRANT ALL ON public.leaderboard TO authenticated;
-EOF
+GRANT ALL ON public.games TO anon, authenticated, service_role;
+GRANT ALL ON public.leaderboard TO anon, authenticated, service_role;
+EOSQL
 
-# Create Kong configuration
+# Replace password placeholder
+sed -i "s/REPLACE_PASSWORD/$$POSTGRES_PASSWORD/g" volumes/db/init/01-init.sql
+
+# Create Kong config
 log "Creating Kong configuration..."
-mkdir -p volumes/api
-cat > volumes/api/kong.yml << EOF
+cat > volumes/api/kong.yml << 'EOKONG'
 _format_version: "2.1"
 
 consumers:
   - username: anon
     keyauth_credentials:
-      - key: $ANON_KEY
+      - key: $${ANON_KEY}
   - username: service_role
     keyauth_credentials:
-      - key: $SERVICE_ROLE_KEY
+      - key: $${SERVICE_ROLE_KEY}
 
 services:
   - name: auth-v1
@@ -378,12 +406,9 @@ services:
           - "/auth/v1/"
     plugins:
       - name: cors
-      - name: key-auth
-        config:
-          hide_credentials: false
 
   - name: rest-v1
-    url: http://rest:3001/
+    url: http://rest:3000/
     routes:
       - name: rest-v1-all
         strip_path: true
@@ -392,8 +417,27 @@ services:
     plugins:
       - name: cors
       - name: key-auth
-        config:
-          hide_credentials: true
+
+  - name: realtime-v1
+    url: http://realtime:4000/socket/
+    routes:
+      - name: realtime-v1-all
+        strip_path: true
+        paths:
+          - "/realtime/v1/"
+    plugins:
+      - name: cors
+      - name: key-auth
+
+  - name: storage-v1
+    url: http://storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - "/storage/v1/"
+    plugins:
+      - name: cors
 
   - name: meta
     url: http://meta:8080/
@@ -404,125 +448,87 @@ services:
           - "/pg/"
     plugins:
       - name: key-auth
-        config:
-          hide_credentials: true
 
 plugins:
   - name: cors
     config:
       origins: ["*"]
       methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-      headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization, X-Client-Info, apikey, X-Requested-With]
-      exposed_headers: [X-Request-Id]
+      headers: [Accept, Authorization, Content-Type, apikey]
       credentials: true
-      max_age: 3600
-EOF
+EOKONG
 
-# Set proper ownership
+# Set ownership
 chown -R supabase:supabase /opt/supabase
 
-# Start services step by step
-log "🚀 Starting Supabase services..."
-
-# Pull images
-sudo -u supabase docker-compose pull
-
-# Start database first
-sudo -u supabase docker-compose up -d db
-
-# Wait for database to be ready (init.sql will run automatically)
-log "⏳ Waiting for database initialization..."
-sleep 60
-
-# Verify database users were created
-log "🔍 Verifying database users..."
-docker exec supabase-db psql -U postgres -d postgres -c "SELECT rolname FROM pg_roles WHERE rolname IN ('authenticator', 'anon', 'authenticated', 'supabase_auth_admin', 'supabase_admin');" || log "⚠️ Some database users may not be created yet"
-
-# Start all services
-sudo -u supabase docker-compose up -d
-
-# Wait for all services
-log "⏳ Waiting for all services to start..."
-sleep 90
-
-# Create management scripts
-log "Creating management scripts..."
-
-cat > /opt/supabase/start.sh << EOF
+# Create start script
+log "Creating startup script..."
+cat > start.sh << 'EOSTART'
 #!/bin/bash
 set -e
 cd /opt/supabase
+
 echo "🚀 Starting Harbor Guesser Supabase..."
-docker-compose up -d
-sleep 60
-docker-compose ps
-echo ""
-echo "🔗 Access URLs:"
-echo "📊 Supabase Studio: http://$SERVER_IP:3000"
-echo "🔌 Supabase API: http://$SERVER_IP:8000"
-EOF
 
-cat > /opt/supabase/status.sh << EOF
-#!/bin/bash
-cd /opt/supabase
-echo "📊 Harbor Guesser Supabase Status:"
-docker-compose ps
-echo ""
-echo "🔗 Access URLs:"
-echo "📊 Supabase Studio: http://$SERVER_IP:3000"
-echo "🔌 Supabase API: http://$SERVER_IP:8000"
-echo ""
-echo "💾 Resource Usage:"
-docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
-EOF
+docker-compose pull
+docker-compose up -d db
 
-cat > /opt/supabase/stop.sh << 'EOF'
-#!/bin/bash
-set -e
-cd /opt/supabase
-echo "🛑 Stopping Supabase..."
-docker-compose down
-echo "✅ Stopped"
-EOF
+echo "⏳ Waiting for database..."
+sleep 30
 
-chmod +x /opt/supabase/*.sh
+docker-compose up -d auth rest realtime storage meta
+sleep 30
+
+docker-compose up -d kong studio
+sleep 30
+
+echo "✅ Supabase started!"
+source .env
+echo "📊 Studio: http://$SERVER_IP:3000"
+echo "🔌 API: http://$SERVER_IP:8000"
+echo "🔑 Anon Key: $ANON_KEY"
+EOSTART
+
+chmod +x start.sh
 
 # Create credentials file
 log "Creating credentials..."
-cat > /opt/supabase/credentials.txt << EOF
-Harbor Guesser REAL Supabase
-============================
+cat > credentials.txt << EOCREDS
+Harbor Guesser Supabase
+======================
 
-🌐 Access:
-- Studio: http://$SERVER_IP:3000
-- API: http://$SERVER_IP:8000
-- Database: postgresql://postgres:${postgres_password}@$SERVER_IP:5432/postgres
+🌐 URLs:
+- Studio: http://$$SERVER_IP:3000
+- API: http://$$SERVER_IP:8000
+
+🔐 Login:
+- Username: $$DASHBOARD_USERNAME
+- Password: $$DASHBOARD_PASSWORD
 
 🔑 Keys:
-- Anon: $ANON_KEY
-- Service: $SERVICE_ROLE_KEY
-- JWT: ${jwt_secret}
+- Anon: $$ANON_KEY
+- Service: $$SERVICE_ROLE_KEY
+- JWT Secret: $$JWT_SECRET
+
+🗄️ Database:
+- Host: $$SERVER_IP:5432
+- Password: $$POSTGRES_PASSWORD
 
 💻 Frontend:
-NEXT_PUBLIC_SUPABASE_URL=http://$SERVER_IP:8000
-NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY
+NEXT_PUBLIC_SUPABASE_URL=http://$$SERVER_IP:8000
+NEXT_PUBLIC_SUPABASE_ANON_KEY=$$ANON_KEY
+EOCREDS
 
-Generated: $(date)
-EOF
+chmod 600 credentials.txt
 
-chmod 600 /opt/supabase/credentials.txt
-chown supabase:supabase /opt/supabase/credentials.txt
+# Start services
+log "Starting Supabase services..."
+sudo -u supabase ./start.sh
 
-# Final check
-RUNNING=$(sudo -u supabase docker-compose ps --services --filter "status=running" | wc -l)
-log "📈 Final status: $RUNNING/6 services running"
+log "Waiting for services to initialize..."
+sleep 90
 
-if [ "$RUNNING" -eq 6 ]; then
-    log "🎯 SUCCESS! Supabase operational!"
-    log "📊 Studio: http://$SERVER_IP:3000"
-    log "🔌 API: http://$SERVER_IP:8000"
-else
-    log "⚠️ Services still starting: $RUNNING/6"
-fi
-
-log "✅ Setup complete!"
+log "✅ Harbor Guesser Supabase setup complete!"
+log "📊 Studio: http://$$SERVER_IP:3000"
+log "🔌 API: http://$$SERVER_IP:8000"
+log "📋 Credentials: /opt/supabase/credentials.txt"
