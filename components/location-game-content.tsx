@@ -1,4 +1,4 @@
-// components/location-game-content.tsx - TESTING VERSION WITH ELISAARI ONLY
+// components/location-game-content.tsx
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -544,26 +544,18 @@ export default function LocationGameContent() {
                                 <p className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
                                   Harbor Photo:
                                 </p>
-                                <div className="relative group">
-                                  <img
-                                    src={currentHarbor.image_url}
-                                    alt={`Harbor: ${currentHarbor.name}`}
-                                    className="w-full h-32 sm:h-40 object-cover rounded-md border border-slate-200 dark:border-slate-600"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                      const fallback = e.currentTarget.nextElementSibling;
-                                      if (fallback) fallback.style.display = 'block';
-                                    }}
-                                  />
-                                  <div 
-                                    className="hidden text-xs text-slate-500 dark:text-slate-400"
-                                    style={{ display: 'none' }}
-                                  >
-                                    <p>{currentHarbor?.hints?.[2] || "Additional harbor information"}</p>
-                                  </div>
-                                </div>
+                                <img
+                                  src={currentHarbor.image_url}
+                                  alt={`Harbor: ${currentHarbor.name}`}
+                                  className="w-full h-32 sm:h-40 object-cover rounded-md border border-slate-200 dark:border-slate-600"
+                                  onError={(e) => {
+                                    // If image fails to load, show the hint text instead
+                                    e.currentTarget.parentElement.innerHTML = `<p>${currentHarbor?.hints?.[2] || "Additional harbor information"}</p>`;
+                                  }}
+                                />
                               </div>
                             ) : (
+                              // No image available, show the hint text
                               <p>{currentHarbor?.hints?.[2] || "Additional harbor information"}</p>
                             )
                           ) : (
@@ -573,7 +565,16 @@ export default function LocationGameContent() {
                       );
                     }
                     
-                    const textHintIndex = hintIndex > 2 ? hintIndex - 1 : hintIndex;
+                    let textHintIndex;
+                    if (hintIndex === 0) {
+                      textHintIndex = 0;
+                    } else if (hintIndex === 1) {
+                      textHintIndex = 1;
+                    } else if (hintIndex === 3) {
+                      textHintIndex = 3;
+                    } else if (hintIndex === 4) {
+                      textHintIndex = 4;
+                    }
                     const hintText = currentHarbor?.hints?.[textHintIndex];
                     
                     return (
