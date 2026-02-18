@@ -50,6 +50,7 @@ export default function LocationGameContent() {
   const { t, language } = useLanguage()
   const { user } = useAuth()
 
+  // State definitions
   const [currentHarbor, setCurrentHarbor] = useState(null)
   const [harbors, setHarbors] = useState([])
   const [loading, setLoading] = useState(true)
@@ -59,8 +60,6 @@ export default function LocationGameContent() {
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [showHarborNames, setShowHarborNames] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  // searchedLocation: triggers map pan + purple pin when user searches.
-  // Separate from selectedLocation (the red guess pin).
   const [searchedLocation, setSearchedLocation] = useState(null)
   const [currentRandomHint, setCurrentRandomHint] = useState<string | null>(null)
   const [gameHistory, setGameHistory] = useState([])
@@ -72,11 +71,9 @@ export default function LocationGameContent() {
   const [userNickname, setUserNickname] = useState("")
   const [showFinalResults, setShowFinalResults] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
-  // Keeps the clicked location visible on the map after guess is submitted
   const [lastGuessLocation, setLastGuessLocation] = useState(null)
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
+  // Helper functions
   const getCurrentHarborState = () => {
     const currentGuesses = gameHistory.filter(g => g.harborId === currentHarbor?.id)
     const hasCorrectAnswer = currentGuesses.some(g => g.correct)
@@ -101,8 +98,6 @@ export default function LocationGameContent() {
     setHasGuessed(false)
   }
 
-  // ── Search ─────────────────────────────────────────────────────────────────
-
   const handleSearch = (e) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
@@ -112,9 +107,7 @@ export default function LocationGameContent() {
     )
 
     if (found) {
-      // Set the guess pin to this location
       setSelectedLocation({ lat: found.coordinates.lat, lng: found.coordinates.lng })
-      // Also trigger the purple "searched" pin + map pan in MapComponent
       setSearchedLocation({
         lat: found.coordinates.lat,
         lng: found.coordinates.lng,
@@ -129,8 +122,6 @@ export default function LocationGameContent() {
       setTimeout(() => setFeedback(null), 3000)
     }
   }
-
-  // ── Guess ──────────────────────────────────────────────────────────────────
 
   const handleGuess = async () => {
     if (!selectedLocation || !currentHarbor || hasGuessed) return
@@ -147,9 +138,6 @@ export default function LocationGameContent() {
     const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 
     const isCorrect = distance <= 20
-
-    // Save where the user clicked before clearing the active pin,
-    // so MapComponent can still draw the line after guess is submitted
     setLastGuessLocation(selectedLocation)
 
     let attemptScore = 0
@@ -172,7 +160,7 @@ export default function LocationGameContent() {
 
     setHasGuessed(true)
     setSelectedLocation(null)
-    setSearchedLocation(null) // clear purple pin after guessing
+    setSearchedLocation(null)
 
     if (isCorrect) {
       setFeedback({
@@ -188,44 +176,129 @@ export default function LocationGameContent() {
     }
   }
 
-  // ── Game flow ──────────────────────────────────────────────────────────────
-
   const saveCompleteGameToSupabase = async (nickname = null) => {
-    if (gameCompleted) return
+    if (gameCompleted) return;
+
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
-      const gameDuration = gameStartTime ? Math.round((Date.now() - gameStartTime) / 1000) : null
-      console.log("Game saved – score:", score, "duration:", gameDuration, "nickname:", nickname)
-      setGameCompleted(true)
-      setShowFinalResults(true)
-    } catch (error) {
-      console.error("Error saving game:", error)
-    }
-  }
+      console.log("Saving game to Supabase...");
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const gameDuration = gameStartTime ? Math.round((Date.now() - gameStartTime) / 1000) : 0;
 
-  const nextRound = async () => {
-    if (round < 3) {
-      setRound(r => r + 1)
-      selectRandomHarbor(harbors)
-    } else {
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
-      if (!currentUser?.id) {
-        setShowNicknameModal(true)
-      } else {
-        await saveCompleteGameToSupabase()
+      // Generate session ID for anonymous users
+      const sessionId = currentUser?.id
+        ? null
+        : `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Calculate game stats
+      const correctAnswers = gameHistory.filter(g => g.correct).length;
+
+      // Prepare the game data for game_scores table
+      const gameData = {
+        game_type: 'location',
+        score: score,
+        language: language,
+        completed_at: new Date().toISOString(),
+        user_id: currentUser?.id || null,
+        session_id: sessionId,
+        nickname: nickname || null,
+        game_duration_seconds: gameDuration,
+        questions_answered: round,
+        correct_answers: correctAnswers,
+        metadata: {
+          rounds: round,
+          game_history: gameHistory.map(g => ({
+            harborId: g.harborId,
+            harborName: g.harborName,
+            distance: g.distance,
+            correct: g.correct,
+            score: g.score
+          }))
+        }
+      };
+
+      console.log("Game data to save:", gameData);
+
+      // Save to game_scores table
+      const { data: gameScore, error: scoreError } = await supabase
+        .from('game_scores')
+        .insert(gameData)
+        .select()
+        .single();
+
+      if (scoreError) {
+        console.error("Error saving game score:", scoreError);
+        throw scoreError;
       }
+
+      console.log("Game score saved successfully:", gameScore.id);
+
+      // Save to leaderboard_entries table WITHOUT accuracy_percentage (it's generated)
+      const { error: leaderboardError } = await supabase
+        .from('leaderboard_entries')
+        .insert({
+          game_score_id: gameScore.id,
+          user_id: currentUser?.id || null,
+          session_id: sessionId,
+          nickname: nickname || null,
+          game_type: 'location',
+          score: score,
+          language: language,
+          completed_at: new Date().toISOString(),
+          game_duration_seconds: gameDuration,
+          questions_answered: round,
+          correct_answers: correctAnswers
+          // accuracy_percentage is omitted as it's a generated column
+        });
+
+      if (leaderboardError) {
+        console.error("Error saving leaderboard entry:", leaderboardError);
+        throw leaderboardError;
+      }
+
+      console.log("Game successfully saved to Supabase");
+      setGameCompleted(true);
+      setShowFinalResults(true);
+      return true;
+    } catch (error) {
+      console.error("Error saving game:", error);
+      setGameCompleted(true);
+      setShowFinalResults(true);
+      return false;
+    }
+  };
+
+  const nextRound = () => {
+    if (round < 3) {
+      setRound(prev => prev + 1)
+      selectRandomHarbor(harbors)
+      setHasGuessed(false)
+      setFeedback(null)
+    } else {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (!user?.id) {
+          setShowNicknameModal(true)
+        } else {
+          saveCompleteGameToSupabase().then(() => {
+            setShowFinalResults(true)
+          })
+        }
+      })
     }
   }
 
-  const handleNicknameSubmit = async (nickname) => {
+  const handleNicknameSubmit = (nickname) => {
     setUserNickname(nickname)
     setShowNicknameModal(false)
-    await saveCompleteGameToSupabase(nickname)
+    saveCompleteGameToSupabase(nickname).then(() => {
+      setShowFinalResults(true)
+    })
   }
 
-  const handleNicknameSkip = async () => {
+  const handleNicknameSkip = () => {
     setShowNicknameModal(false)
-    await saveCompleteGameToSupabase()
+    saveCompleteGameToSupabase().then(() => {
+      setShowFinalResults(true)
+    })
   }
 
   const resetGame = () => {
@@ -236,10 +309,11 @@ export default function LocationGameContent() {
     setShowFinalResults(false)
     setGameStartTime(Date.now())
     selectRandomHarbor(harbors)
+    setHasGuessed(false)
+    setFeedback(null)
   }
 
-  // ── Init ───────────────────────────────────────────────────────────────────
-
+  // Initialization
   useEffect(() => {
     if (!language) return
     const initializeGame = async () => {
@@ -277,16 +351,12 @@ export default function LocationGameContent() {
   }
 
   const currentState = getCurrentHarborState()
-  // After guessing: pass lastGuessLocation so the map draws the line correctly
   const mapSelectedLocation = hasGuessed ? lastGuessLocation : selectedLocation
   const mapActualLocation = hasGuessed ? currentHarbor?.coordinates : null
-
-  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-6 lg:py-8">
-
         {/* Top bar */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
           <Link href="/">
@@ -308,11 +378,10 @@ export default function LocationGameContent() {
         </div>
 
         <div className="space-y-4 lg:grid lg:grid-cols-3 lg:gap-6 lg:space-y-0">
-
           {/* Left panel */}
           <Card className="lg:col-span-1">
             <CardContent className="p-3 sm:p-4">
-
+              {/* Game content */}
               <div className="flex items-center gap-2 mb-3 sm:mb-4">
                 <Anchor className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                 <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-800 dark:text-white truncate">
@@ -408,7 +477,6 @@ export default function LocationGameContent() {
                   <Switch checked={showHarborNames} onCheckedChange={setShowHarborNames} />
                 </div>
 
-                {/* Search — sets selectedLocation AND searchedLocation so map pans + shows purple pin */}
                 <form onSubmit={handleSearch} className="flex gap-1 sm:gap-2">
                   <div className="relative flex-grow">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 sm:h-4 sm:w-4 text-slate-400" />
@@ -445,13 +513,12 @@ export default function LocationGameContent() {
                 </Button>
               ) : (
                 <Button
-                  onClick={nextRound}
+                  onClick={() => nextRound()}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base py-3"
                 >
                   {round < 3 ? t("locationGame.nextHarbor") : t("locationGame.seeFinalScore")}
                 </Button>
               )}
-
             </CardContent>
           </Card>
 
@@ -478,7 +545,6 @@ export default function LocationGameContent() {
               />
             </div>
           </div>
-
         </div>
 
         {/* Modals */}
@@ -503,7 +569,6 @@ export default function LocationGameContent() {
             nextRound()
           }}
         />
-
       </div>
     </div>
   )

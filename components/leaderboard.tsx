@@ -1,5 +1,4 @@
 // components/leaderboard.tsx
-
 "use client"
 import { useState, useEffect } from "react"
 import { Trophy, Medal, Award, User, Clock, Target, Percent, Star } from "lucide-react"
@@ -88,7 +87,7 @@ export default function Leaderboard({ showUserStats = false }: { showUserStats?:
       }
 
       // Filter and transform data
-      const weeklyData = rawData?.filter(entry => 
+      const weeklyData = rawData?.filter(entry =>
         new Date(entry.completed_at) >= oneWeekAgo
       ) || []
 
@@ -161,7 +160,7 @@ export default function Leaderboard({ showUserStats = false }: { showUserStats?:
           <div
             key={`${entry.user_id || entry.nickname}-${index}`}
             className={`flex items-center justify-between p-2 sm:p-3 rounded-lg border transition-colors ${
-              entry.rank <= 3 
+              entry.rank <= 3
                 ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200 dark:from-yellow-900/20 dark:to-amber-900/20 dark:border-yellow-800'
                 : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
             }`}
@@ -170,7 +169,7 @@ export default function Leaderboard({ showUserStats = false }: { showUserStats?:
               <div className="flex items-center justify-center w-6 sm:w-8 flex-shrink-0">
                 {getRankIcon(entry.rank)}
               </div>
-              
+
               <div className="flex items-center gap-1 sm:gap-2 min-w-0">
                 {entry.is_registered ? (
                   <div className="relative group">
@@ -193,14 +192,15 @@ export default function Leaderboard({ showUserStats = false }: { showUserStats?:
                 <Trophy className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-500" />
                 <span className="font-bold">{entry.score}</span>
               </div>
-              
-              {entry.accuracy_percentage !== null && entry.accuracy_percentage !== undefined && (
+
+              {/* Removed accuracy percentage display */}
+              {/* {entry.accuracy_percentage !== null && entry.accuracy_percentage !== undefined && (
                 <div className="hidden sm:flex items-center gap-1">
                   <Percent className="h-4 w-4 text-green-500" />
                   <span>{Math.round(entry.accuracy_percentage)}%</span>
                 </div>
-              )}
-              
+              )} */}
+
               {entry.game_duration_seconds && (
                 <div className="hidden md:flex items-center gap-1">
                   <Clock className="h-4 w-4 text-blue-500" />
@@ -250,7 +250,7 @@ export default function Leaderboard({ showUserStats = false }: { showUserStats?:
           <CardContent>
             <div className="text-center py-8">
               <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-              <button 
+              <button
                 onClick={fetchLeaderboardData}
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
               >
@@ -267,13 +267,13 @@ export default function Leaderboard({ showUserStats = false }: { showUserStats?:
     <div className="w-full max-w-4xl mx-auto">
       <Tabs defaultValue="trivia" className="w-full">
         <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6 bg-slate-100 dark:bg-slate-800">
-          <TabsTrigger 
+          <TabsTrigger
             value="trivia"
             className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-200 dark:data-[state=active]:text-slate-900"
           >
             {t("leaderboard.triviaGame")}
           </TabsTrigger>
-          <TabsTrigger 
+          <TabsTrigger
             value="location"
             className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-200 dark:data-[state=active]:text-slate-900"
           >
