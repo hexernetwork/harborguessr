@@ -19,3 +19,4 @@ finnish_harbors.json
 harbor_scraper.py
 harbors.csv
 
+.env

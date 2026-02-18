@@ -1,11 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Anchor, Layers, X } from "lucide-react"
+import { Anchor, Layers } from "lucide-react"
 import "leaflet/dist/leaflet.css"
 import { useLanguage } from "@/contexts/language-context"
 
-// This component uses Leaflet.js with OpenStreetMap or Esri satellite
 export default function MapComponent({
   selectedLocation = null,
   setSelectedLocation = null,
@@ -23,49 +22,41 @@ export default function MapComponent({
   const mapInstanceRef = useRef(null)
   const markerRef = useRef(null)
   const actualMarkerRef = useRef(null)
+  const lineRef = useRef(null)
   const harborMarkersRef = useRef([])
   const searchMarkerRef = useRef(null)
   const guessMarkersRef = useRef([])
   const [mapLoaded, setMapLoaded] = useState(false)
-  const [mapStyle, setMapStyle] = useState("standard") // Default to satellite?
+  const [mapStyle, setMapStyle] = useState("standard")
   const [showStyleDropdown, setShowStyleDropdown] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
 
-  // Finland's bounding box
-  const finlandBounds = [
-    [59.7, 19.1], // Southwest
-    [70.1, 31.6], // Northeast
-  ]
+  // Ref so click handler always reads latest setter without remounting the map
+  const setSelectedLocationRef = useRef(setSelectedLocation)
+  useEffect(() => {
+    setSelectedLocationRef.current = setSelectedLocation
+  }, [setSelectedLocation])
 
-  // Map style configurations
   const mapStyles = {
     standard: {
       tileUrl: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      attribution: '', // Empty to hide attribution
+      attribution: "",
       backgroundColor: "#f2f2f2",
     },
     satellite: {
       tileUrl: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      attribution: '', // Empty to hide attribution
+      attribution: "",
       backgroundColor: "#000000",
     },
   }
 
-  // Update map style
   const updateMapStyle = (map, L, style) => {
-    // Remove existing tile layers
     map.eachLayer((layer) => {
-      if (layer instanceof L.TileLayer) {
-        map.removeLayer(layer)
-      }
+      if (layer instanceof L.TileLayer) map.removeLayer(layer)
     })
-
-    // Update background color
     if (mapRef.current) {
       mapRef.current.style.backgroundColor = mapStyles[style].backgroundColor
     }
-
-    // Add new tile layer
     L.tileLayer(mapStyles[style].tileUrl, {
       attribution: mapStyles[style].attribution,
       maxZoom: 19,
@@ -73,62 +64,44 @@ export default function MapComponent({
     }).addTo(map)
   }
 
-  // Toggle full-screen
-  const toggleFullScreen = () => {
-    if (!mapInstanceRef.current) return
-    setIsFullScreen(!isFullScreen)
-    setTimeout(() => {
-      mapInstanceRef.current.invalidateSize()
-    }, 100)
-  }
-
-  // Load map
-  const loadMap = async () => {
-    try {
-      if (typeof window === "undefined") return
-
-      const L = await import("leaflet")
-
-      if (mapInstanceRef.current || !mapRef.current) return
-
-      // Set initial background color
-      if (mapRef.current) {
-        mapRef.current.style.backgroundColor = mapStyles[mapStyle].backgroundColor
-      }
-
-      // Initialize map
-      const map = L.map(mapRef.current, {
-        center: [64.0, 26.0], // Center of Finland
-        zoom: 5,
-        zoomControl: false,
-        attributionControl: false, // Hide attribution control
-      })
-
-      // Add tile layer
-      L.tileLayer(mapStyles[mapStyle].tileUrl, {
-        attribution: mapStyles[mapStyle].attribution,
-        maxZoom: 19,
-        noWrap: true,
-      }).addTo(map)
-
-      // Add click handler
-      if (setSelectedLocation) {
-        map.on("click", (e) => {
-          setSelectedLocation({
-            lat: e.latlng.lat,
-            lng: e.latlng.lng,
-          })
-        })
-      }
-
-      mapInstanceRef.current = map
-      setMapLoaded(true)
-    } catch (error) {
-      console.error("Error loading map:", error)
-    }
-  }
-
+  // ── Initialize map ONCE ───────────────────────────────────────────────────
   useEffect(() => {
+    const loadMap = async () => {
+      try {
+        if (typeof window === "undefined") return
+        const L = await import("leaflet")
+        if (mapInstanceRef.current || !mapRef.current) return
+
+        if (mapRef.current) {
+          mapRef.current.style.backgroundColor = mapStyles[mapStyle].backgroundColor
+        }
+
+        const map = L.map(mapRef.current, {
+          center: [64.0, 26.0],
+          zoom: 5,
+          zoomControl: false,
+          attributionControl: false,
+        })
+
+        L.tileLayer(mapStyles[mapStyle].tileUrl, {
+          attribution: mapStyles[mapStyle].attribution,
+          maxZoom: 19,
+          noWrap: true,
+        }).addTo(map)
+
+        map.on("click", (e) => {
+          if (setSelectedLocationRef.current) {
+            setSelectedLocationRef.current({ lat: e.latlng.lat, lng: e.latlng.lng })
+          }
+        })
+
+        mapInstanceRef.current = map
+        setMapLoaded(true)
+      } catch (error) {
+        console.error("Error loading map:", error)
+      }
+    }
+
     loadMap()
 
     return () => {
@@ -137,377 +110,315 @@ export default function MapComponent({
         mapInstanceRef.current = null
       }
     }
-  }, [setSelectedLocation])
+  }, []) // empty — map initializes once, never remounts
 
-  // Change map style
+  // ── Map style ─────────────────────────────────────────────────────────────
   const changeMapStyle = (style) => {
     setMapStyle(style)
     setShowStyleDropdown(false)
-
     if (mapInstanceRef.current) {
-      import("leaflet").then((L) => {
-        updateMapStyle(mapInstanceRef.current, L, style)
-      }).catch((error) => {
-        console.error("Error updating map style:", error)
-      })
+      import("leaflet").then((L) => updateMapStyle(mapInstanceRef.current, L, style))
     }
   }
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (showStyleDropdown) {
-      const handleClickOutside = (event) => {
-        if (!event.target.closest(".map-style-dropdown")) {
-          setShowStyleDropdown(false)
-        }
-      }
-      document.addEventListener("mousedown", handleClickOutside)
-      return () => document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [showStyleDropdown])
-
-  // Handle map style changes
   useEffect(() => {
     if (!mapLoaded || !mapInstanceRef.current) return
-
-    import("leaflet").then((L) => {
-      updateMapStyle(mapInstanceRef.current, L, mapStyle)
-    }).catch((error) => {
-      console.error("Error updating map style:", error)
-    })
+    import("leaflet").then((L) => updateMapStyle(mapInstanceRef.current, L, mapStyle))
   }, [mapStyle, mapLoaded])
 
-  // Handle full-screen state
+  // ── Full-screen ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapInstanceRef.current) return
-
     if (isFullScreen) {
-      document.body.style.overflow = 'hidden'
-      mapRef.current.style.zIndex = '1000'
+      document.body.style.overflow = "hidden"
+      if (mapRef.current) mapRef.current.style.zIndex = "1000"
     } else {
-      document.body.style.overflow = 'auto'
-      mapRef.current.style.zIndex = '10'
+      document.body.style.overflow = "auto"
+      if (mapRef.current) mapRef.current.style.zIndex = "10"
     }
-
     mapInstanceRef.current.invalidateSize()
   }, [isFullScreen])
 
-  // Handle game history
+  // ── Dropdown outside-click ────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current || !gameHistory || gameHistory.length === 0) return
+    if (!showStyleDropdown) return
+    const handler = (e) => {
+      if (!e.target.closest(".map-style-dropdown")) setShowStyleDropdown(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [showStyleDropdown])
 
-    const loadGameHistoryMarkers = async () => {
+  // ── Selected location marker (red pin) ───────────────────────────────────
+  useEffect(() => {
+    if (!mapLoaded || !mapInstanceRef.current) return
+    const update = async () => {
       try {
         const L = await import("leaflet")
+        if (markerRef.current) { markerRef.current.remove(); markerRef.current = null }
+        if (!selectedLocation) return
 
-        guessMarkersRef.current.forEach((marker) => marker.remove())
-        guessMarkersRef.current = []
+        // If showHarborNames is on and this matches a known harbor,
+        // skip the red pin — the harbor marker itself shows the highlight
+        if (showHarborNames && harborData?.length) {
+          const matchesHarbor = harborData.some(
+            (h) =>
+              h?.coordinates &&
+              Math.abs(h.coordinates.lat - selectedLocation.lat) < 0.0001 &&
+              Math.abs(h.coordinates.lng - selectedLocation.lng) < 0.0001
+          )
+          if (matchesHarbor) return
+        }
 
-        gameHistory.forEach((guess, index) => {
-          if (!guess.selectedLocation) return
-
-          const lat = guess.selectedLocation?.lat || guess.lat
-          const lng = guess.selectedLocation?.lng || guess.lng
-
-          if (!lat || !lng) {
-            console.warn("Invalid guess location:", guess)
-            return
-          }
-
-          const isCorrect = guess.correct
-          const attemptNumber = index + 1
-          const color = isCorrect ? '#10b981' : `hsl(${(attemptNumber * 60) % 360}, 70%, 50%)`
-
-          const guessIcon = L.divIcon({
-            html: `
-              <div class="relative">
-                <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border-2 border-white" style="background-color: ${color}">
-                  <span class="text-white text-xs font-bold">${attemptNumber}</span>
-                </div>
-                <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 text-white px-1 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color: ${color}">
-                  ${isCorrect ? t("locationGame.correct") : `${Math.round(guess.distance)}km`}
-                </div>
+        const icon = L.divIcon({
+          html: `
+            <div class="relative">
+              <div class="absolute -top-4 -left-4 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="5" r="3"></circle>
+                  <line x1="12" y1="22" x2="12" y2="8"></line>
+                  <path d="M5 12H2a10 10 0 0 0 20 0h-3"></path>
+                </svg>
               </div>
-            `,
-            className: "",
-            iconSize: [0, 0],
-          })
-
-          const marker = L.marker([lat, lng], { icon: guessIcon }).addTo(mapInstanceRef.current)
-          marker.bindPopup(`
-            <div class="p-2">
-              <h3 class="font-bold">${t("locationGame.guess")} ${attemptNumber}</h3>
-              <p class="text-xs mt-1">${t("locationGame.distance")}: ${Math.round(guess.distance)}km</p>
-            </div>
-          `)
-          guessMarkersRef.current.push(marker)
+              <div class="absolute -top-4 -left-4 w-8 h-8 bg-red-500 rounded-full animate-ping opacity-50"></div>
+              <div class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
+                ${t("locationGame.yourGuess")}
+              </div>
+            </div>`,
+          className: "",
+          iconSize: [0, 0],
         })
-
-        console.log(`Added ${guessMarkersRef.current.length} guess markers to map`)
-      } catch (error) {
-        console.error("Error loading game history markers:", error)
+        markerRef.current = L.marker([selectedLocation.lat, selectedLocation.lng], { icon }).addTo(mapInstanceRef.current)
+      } catch (err) {
+        console.error("Error updating selected marker:", err)
       }
     }
+    update()
+  }, [selectedLocation, mapLoaded, showHarborNames, harborData, t])
 
-    loadGameHistoryMarkers()
-
-    return () => {
-      guessMarkersRef.current.forEach((marker) => marker.remove())
-      guessMarkersRef.current = []
-    }
-  }, [mapLoaded, gameHistory, t])
-
-  // Handle harbor data
+  // ── Actual harbor marker + line (only shown AFTER guessing) ──────────────
   useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current || !showHarborNames || !harborData || harborData.length === 0) return
-
-    const loadHarborMarkers = async () => {
+    if (!mapLoaded || !mapInstanceRef.current) return
+    const update = async () => {
       try {
         const L = await import("leaflet")
+        if (actualMarkerRef.current) { actualMarkerRef.current.remove(); actualMarkerRef.current = null }
+        if (lineRef.current) { lineRef.current.remove(); lineRef.current = null }
+        if (!actualLocation) return
 
-        harborMarkersRef.current.forEach((marker) => marker.remove())
+        const icon = L.divIcon({
+          html: `
+            <div class="relative">
+              <div class="absolute -top-5 -left-5 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
+                  <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
+                </svg>
+              </div>
+              <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap shadow-lg">
+                ${harborName || t("locationGame.actualLocation")}
+              </div>
+            </div>`,
+          className: "",
+          iconSize: [0, 0],
+        })
+
+        actualMarkerRef.current = L.marker([actualLocation.lat, actualLocation.lng], { icon }).addTo(mapInstanceRef.current)
+
+        if (selectedLocation) {
+          lineRef.current = L.polyline(
+            [[selectedLocation.lat, selectedLocation.lng], [actualLocation.lat, actualLocation.lng]],
+            { color: "red", dashArray: "5, 10", weight: 2 }
+          ).addTo(mapInstanceRef.current)
+
+          const bounds = L.latLngBounds(
+            [selectedLocation.lat, selectedLocation.lng],
+            [actualLocation.lat, actualLocation.lng]
+          )
+          mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60] })
+        } else {
+          mapInstanceRef.current.setView([actualLocation.lat, actualLocation.lng], 10)
+        }
+      } catch (err) {
+        console.error("Error updating actual marker:", err)
+      }
+    }
+    update()
+  }, [actualLocation, selectedLocation, harborName, mapLoaded, t])
+
+  // ── Harbor name markers ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapLoaded || !mapInstanceRef.current || !showHarborNames || !harborData?.length) return
+    const update = async () => {
+      try {
+        const L = await import("leaflet")
+        harborMarkersRef.current.forEach((m) => m.remove())
         harborMarkersRef.current = []
 
         harborData.forEach((harbor) => {
-          if (!harbor || !harbor.coordinates || !harbor.coordinates.lat || !harbor.coordinates.lng) {
-            console.warn("Invalid harbor data:", harbor)
-            return
-          }
+          if (!harbor?.coordinates?.lat || !harbor?.coordinates?.lng) return
 
-          const isCurrentHarbor = currentHarbor && harbor.id === currentHarbor.id
-          const markerColor = isCurrentHarbor ? '#f59e0b' : '#2563eb'
+          // !! Do NOT use isCurrent / highlight the correct harbor !!
+          // That would reveal the answer to the player.
+          // const isCurrent = currentHarbor && harbor.id === currentHarbor.id  ← commented out
 
-          const harborIcon = L.divIcon({
-            html: `
-              <div class="relative">
-                <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center shadow-md border border-white" style="background-color: ${markerColor}">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
-                    <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
-                  </svg>
-                </div>
-                <div class="absolute -top-9 left-1/2 transform -translate-x-1/2 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color: ${markerColor}">
-                  ${harbor.name || t("map.unknownHarbor")}${isCurrentHarbor ? ' ⭐' : ''}
-                </div>
-              </div>
-            `,
-            className: "",
-            iconSize: [0, 0],
-          })
+          // Is this harbor the player's current guess selection?
+          const isSelected =
+            selectedLocation &&
+            Math.abs(harbor.coordinates.lat - selectedLocation.lat) < 0.0001 &&
+            Math.abs(harbor.coordinates.lng - selectedLocation.lng) < 0.0001
 
-          const marker = L.marker([harbor.coordinates.lat, harbor.coordinates.lng], { icon: harborIcon }).addTo(
-            mapInstanceRef.current,
-          )
+          // All unselected harbors use the same neutral blue — no amber/star for correct answer
+          const color = isSelected ? "#ef4444" : "#2563eb"
 
-          marker.bindPopup(`
-            <div class="p-2">
-              <h3 class="font-bold">${harbor.name || t("map.unknownHarbor")}${isCurrentHarbor ? ' ⭐' : ''}</h3>
-              <p class="text-xs mt-1">${harbor.region || t("map.unknownRegion")}</p>
-              <p class="text-xs mt-1">${(harbor.type || []).join(", ") || t("map.unknownType")}</p>
-              ${isCurrentHarbor ? '<p class="text-xs mt-1 font-bold text-amber-600">Current target</p>' : ''}
-            </div>
-          `)
-
-          harborMarkersRef.current.push(marker)
-        })
-      } catch (error) {
-        console.error("Error loading harbor markers:", error)
-      }
-    }
-
-    loadHarborMarkers()
-
-    return () => {
-      harborMarkersRef.current.forEach((marker) => marker.remove())
-      harborMarkersRef.current = []
-    }
-  }, [mapLoaded, showHarborNames, harborData, currentHarbor, t])
-
-  // Handle selected location
-  useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current) return
-
-    const updateSelectedMarker = async () => {
-      try {
-        const L = await import("leaflet")
-
-        if (markerRef.current) {
-          markerRef.current.remove()
-          markerRef.current = null
-        }
-
-        if (selectedLocation) {
-          const guessIcon = L.divIcon({
-            html: `
-              <div class="relative">
-                <div class="absolute -top-4 -left-4 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          const icon = L.divIcon({
+            html: isSelected ? `
+              <div class="relative" style="cursor:pointer">
+                <div class="absolute -top-5 -left-5 w-10 h-10 bg-red-500 rounded-full animate-ping opacity-40"></div>
+                <div class="absolute -top-5 -left-5 w-10 h-10 rounded-full flex items-center justify-center shadow-lg border-2 border-white" style="background-color:${color}">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <circle cx="12" cy="5" r="3"></circle>
                     <line x1="12" y1="22" x2="12" y2="8"></line>
                     <path d="M5 12H2a10 10 0 0 0 20 0h-3"></path>
                   </svg>
                 </div>
-                <div class="absolute -top-4 -left-4 w-8 h-8 bg-red-500 rounded-full animate-ping opacity-50"></div>
-                <div class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
-                  ${t("locationGame.yourGuess")}
+                <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color:${color}">
+                  ✓ ${harbor.name}
                 </div>
-              </div>
-            `,
-            className: "",
-            iconSize: [0, 0],
-          })
-
-          markerRef.current = L.marker([selectedLocation.lat, selectedLocation.lng], { icon: guessIcon }).addTo(
-            mapInstanceRef.current,
-          )
-        }
-      } catch (error) {
-        console.error("Error updating selected marker:", error)
-      }
-    }
-
-    updateSelectedMarker()
-  }, [selectedLocation, mapLoaded, t])
-
-  // Handle actual location
-  useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current) return
-
-    const updateActualMarker = async () => {
-      try {
-        const L = await import("leaflet")
-
-        if (actualMarkerRef.current) {
-          actualMarkerRef.current.remove()
-          actualMarkerRef.current = null
-        }
-
-        if (actualLocation) {
-          const actualIcon = L.divIcon({
-            html: `
-              <div class="relative">
-                <div class="absolute -top-5 -left-5 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
-                    <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
+              </div>` : `
+              <div class="relative" style="cursor:pointer">
+                <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center shadow-md border border-white" style="background-color:${color}">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"/>
+                    <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"/>
                   </svg>
                 </div>
-                <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap shadow-lg">
-                  ${harborName || t("locationGame.actualLocation")}
+                <div class="absolute -top-9 left-1/2 transform -translate-x-1/2 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color:${color}">
+                  ${harbor.name}
                 </div>
-              </div>
-            `,
+              </div>`,
             className: "",
             iconSize: [0, 0],
           })
 
-          actualMarkerRef.current = L.marker([actualLocation.lat, actualLocation.lng], { icon: actualIcon }).addTo(
-            mapInstanceRef.current,
-          )
+          const marker = L.marker([harbor.coordinates.lat, harbor.coordinates.lng], { icon })
+            .addTo(mapInstanceRef.current)
 
-          if (selectedLocation) {
-            const line = L.polyline(
-              [
-                [selectedLocation.lat, selectedLocation.lng],
-                [actualLocation.lat, actualLocation.lng],
-              ],
-              { color: "red", dashArray: "5, 10", weight: 2 },
-            ).addTo(mapInstanceRef.current)
+          // Clicking a harbor marker selects it as the guess
+          marker.on("click", (e) => {
+            L.DomEvent.stopPropagation(e)
+            if (setSelectedLocationRef.current) {
+              setSelectedLocationRef.current({
+                lat: harbor.coordinates.lat,
+                lng: harbor.coordinates.lng,
+              })
+            }
+          })
 
-            const bounds = L.latLngBounds(
-              [selectedLocation.lat, selectedLocation.lng],
-              [actualLocation.lat, actualLocation.lng],
-            )
-            mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] })
-          } else {
-            mapInstanceRef.current.setView([actualLocation.lat, actualLocation.lng], 10)
-          }
-        }
-      } catch (error) {
-        console.error("Error updating actual marker:", error)
+          harborMarkersRef.current.push(marker)
+        })
+      } catch (err) {
+        console.error("Error loading harbor markers:", err)
       }
     }
+    update()
+    return () => { harborMarkersRef.current.forEach((m) => m.remove()); harborMarkersRef.current = [] }
+  // selectedLocation in deps so highlight updates when selection changes
+  }, [mapLoaded, showHarborNames, harborData, selectedLocation, t])
+  // NOTE: currentHarbor intentionally removed from deps — was causing correct harbor to be revealed
 
-    updateActualMarker()
-  }, [actualLocation, selectedLocation, harborName, mapLoaded, t])
-
-  // Handle searched location
+  // ── Game history markers ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current || !searchedLocation) return
-
-    const updateSearchMarker = async () => {
+    if (!mapLoaded || !mapInstanceRef.current || !gameHistory?.length) return
+    const update = async () => {
       try {
         const L = await import("leaflet")
+        guessMarkersRef.current.forEach((m) => m.remove())
+        guessMarkersRef.current = []
 
-        if (searchMarkerRef.current) {
-          searchMarkerRef.current.remove()
-          searchMarkerRef.current = null
-        }
+        gameHistory.forEach((guess, index) => {
+          const lat = guess.selectedLocation?.lat
+          const lng = guess.selectedLocation?.lng
+          if (!lat || !lng) return
+
+          const color = guess.correct ? "#10b981" : `hsl(${(index * 60) % 360}, 70%, 50%)`
+          const icon = L.divIcon({
+            html: `
+              <div class="relative">
+                <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center shadow-lg border-2 border-white" style="background-color:${color}">
+                  <span class="text-white text-xs font-bold">${index + 1}</span>
+                </div>
+                <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 text-white px-1 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color:${color}">
+                  ${guess.correct ? t("locationGame.correct") : `${Math.round(guess.distance)}km`}
+                </div>
+              </div>`,
+            className: "",
+            iconSize: [0, 0],
+          })
+          const marker = L.marker([lat, lng], { icon }).addTo(mapInstanceRef.current)
+          guessMarkersRef.current.push(marker)
+        })
+      } catch (err) {
+        console.error("Error loading history markers:", err)
+      }
+    }
+    update()
+    return () => { guessMarkersRef.current.forEach((m) => m.remove()); guessMarkersRef.current = [] }
+  }, [mapLoaded, gameHistory, t])
+
+  // ── Searched location (purple pin + pan) ─────────────────────────────────
+  useEffect(() => {
+    if (!mapLoaded || !mapInstanceRef.current || !searchedLocation) return
+    const update = async () => {
+      try {
+        const L = await import("leaflet")
+        if (searchMarkerRef.current) { searchMarkerRef.current.remove(); searchMarkerRef.current = null }
 
         mapInstanceRef.current.setView([searchedLocation.lat, searchedLocation.lng], 8)
 
-        const searchIcon = L.divIcon({
+        // If showHarborNames is on, harbor marker already highlights — just pan, skip extra pin
+        if (showHarborNames) return
+
+        const icon = L.divIcon({
           html: `
             <div class="relative">
               <div class="absolute -top-4 -left-4 w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <path d="m21 21-4.3-4.3"></path>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
                 </svg>
               </div>
               <div class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-purple-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md">
-                ${searchedLocation.name || t("map.searchedLocation")}
+                ${searchedLocation.name || ""}
               </div>
-            </div>
-          `,
+            </div>`,
           className: "",
           iconSize: [0, 0],
         })
 
-        searchMarkerRef.current = L.marker([searchedLocation.lat, searchedLocation.lng], { icon: searchIcon }).addTo(
-          mapInstanceRef.current,
-        )
-
-        searchMarkerRef.current
-          .bindPopup(`
-            <div class="p-2">
-              <h3 class="font-bold">${searchedLocation.name}</h3>
-              <p class="text-xs mt-1">${t("map.searchedLocation")}</p>
-            </div>
-          `)
-          .openPopup()
-
+        searchMarkerRef.current = L.marker([searchedLocation.lat, searchedLocation.lng], { icon }).addTo(mapInstanceRef.current)
         setTimeout(() => {
-          if (searchMarkerRef.current) {
-            searchMarkerRef.current.remove()
-            searchMarkerRef.current = null
-          }
+          if (searchMarkerRef.current) { searchMarkerRef.current.remove(); searchMarkerRef.current = null }
         }, 5000)
-      } catch (error) {
-        console.error("Error updating search marker:", error)
+      } catch (err) {
+        console.error("Error updating search marker:", err)
       }
     }
+    update()
+  }, [searchedLocation, mapLoaded, showHarborNames, t])
 
-    updateSearchMarker()
-  }, [searchedLocation, mapLoaded, t])
-
-  // Force map resize
+  // ── Resize ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handleResize = () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.invalidateSize()
-      }
-    }
-
-    window.addEventListener("resize", handleResize)
-    return () => window.removeEventListener("resize", handleResize)
+    const handler = () => mapInstanceRef.current?.invalidateSize()
+    window.addEventListener("resize", handler)
+    return () => window.removeEventListener("resize", handler)
   }, [])
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className={`relative w-full ${isFullScreen ? 'fixed inset-0 z-50' : 'h-[500px]'} bg-blue-50`}>
-      <div ref={mapRef} className="w-full h-full z-10"></div>
+    <div className={`relative w-full ${isFullScreen ? "fixed inset-0 z-50" : "h-[500px]"} bg-blue-50`}>
+      <div ref={mapRef} className="w-full h-full z-10" />
 
-      {!selectedLocation && !actualLocation && setSelectedLocation && (
+      {!selectedLocation && !actualLocation && setSelectedLocationRef.current && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/90 dark:bg-slate-800/90 p-3 rounded-lg text-center z-20 shadow-lg">
           <div className="flex items-center gap-2">
             <Anchor className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -518,13 +429,13 @@ export default function MapComponent({
 
       {selectedLocation && !actualLocation && (
         <div className="absolute bottom-4 right-4 z-20">
-          <div className="bg-blue-600 text-white text-xs font-medium py-1.5 px-3 rounded-full shadow-md">
-            {t("map.locationSelected")}
+          <div className="bg-red-500 text-white text-xs font-medium py-1.5 px-3 rounded-full shadow-md">
+            ✓ {t("map.locationSelected")}
           </div>
         </div>
       )}
 
-      {gameHistory && gameHistory.length > 0 && (
+      {gameHistory?.length > 0 && (
         <div className="absolute bottom-4 left-4 z-20">
           <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg text-xs">
             <p className="font-medium text-slate-800 dark:text-white mb-1">{t("locationGame.previousGuesses")}:</p>
@@ -533,7 +444,7 @@ export default function MapComponent({
                 <div
                   key={index}
                   className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                  style={{ backgroundColor: guess.correct ? '#10b981' : `hsl(${(index * 60) % 360}, 70%, 50%)` }}
+                  style={{ backgroundColor: guess.correct ? "#10b981" : `hsl(${(index * 60) % 360}, 70%, 50%)` }}
                 >
                   {index + 1}
                 </div>
@@ -543,6 +454,7 @@ export default function MapComponent({
         </div>
       )}
 
+      {/* Zoom + layer controls */}
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
         <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg">
           <div className="flex flex-col gap-2">
@@ -572,7 +484,6 @@ export default function MapComponent({
             >
               <Layers className="h-4 w-4" />
             </button>
-
             {showStyleDropdown && (
               <div className="absolute top-0 right-full mr-2">
                 <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-2 w-32">
