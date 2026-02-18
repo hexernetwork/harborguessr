@@ -15,3 +15,7 @@ terraform/environments/*/.terraform/
 terraform/environments/*/terraform.tfstate*
 terraform/environments/*/.terraform.lock.hcl
 terraform/**/.env
+finnish_harbors.json
+harbor_scraper.py
+harbors.csv
+
