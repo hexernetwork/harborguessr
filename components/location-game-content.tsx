@@ -1,7 +1,7 @@
 // components/location-game-content.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { ArrowLeft, RefreshCw, Ship, Eye, EyeOff, Search, Anchor, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -49,6 +49,9 @@ async function fetchHarborsFromWorker(language) {
 export default function LocationGameContent() {
   const { t, language } = useLanguage()
   const { user } = useAuth()
+
+  // Add map ref with proper typing
+  const mapRef = useRef<{ resetMapView: () => void }>(null)
 
   // State definitions
   const [currentHarbor, setCurrentHarbor] = useState(null)
@@ -247,7 +250,6 @@ export default function LocationGameContent() {
           game_duration_seconds: gameDuration,
           questions_answered: round,
           correct_answers: correctAnswers
-          // accuracy_percentage is omitted as it's a generated column
         });
 
       if (leaderboardError) {
@@ -273,6 +275,11 @@ export default function LocationGameContent() {
       selectRandomHarbor(harbors)
       setHasGuessed(false)
       setFeedback(null)
+
+      // Reset the map view to show all of Finland
+      if (mapRef.current) {
+        mapRef.current.resetMapView()
+      }
     } else {
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (!user?.id) {
@@ -311,6 +318,11 @@ export default function LocationGameContent() {
     selectRandomHarbor(harbors)
     setHasGuessed(false)
     setFeedback(null)
+
+    // Reset the map view when starting a new game
+    if (mapRef.current) {
+      mapRef.current.resetMapView()
+    }
   }
 
   // Initialization
@@ -532,6 +544,7 @@ export default function LocationGameContent() {
             </div>
             <div className="h-[60vh] min-h-[400px] sm:h-[65vh] sm:min-h-[450px] lg:h-[500px]">
               <MapComponent
+                ref={mapRef}
                 selectedLocation={mapSelectedLocation}
                 setSelectedLocation={hasGuessed ? null : setSelectedLocation}
                 actualLocation={mapActualLocation}

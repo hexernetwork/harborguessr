@@ -1,12 +1,12 @@
 // components/map-component.tsx
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react"
 import { Anchor, Layers } from "lucide-react"
 import "leaflet/dist/leaflet.css"
 import { useLanguage } from "@/contexts/language-context"
 
-export default function MapComponent({
+const MapComponent = forwardRef(({
   selectedLocation = null,
   setSelectedLocation = null,
   actualLocation = null,
@@ -17,7 +17,7 @@ export default function MapComponent({
   searchedLocation = null,
   gameHistory = [],
   currentHarbor = null,
-}) {
+}, ref) => {
   const { t } = useLanguage() || { t: (key) => key }
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
@@ -50,6 +50,17 @@ export default function MapComponent({
       backgroundColor: "#000000",
     },
   }
+
+  // Function to reset map view to show all of Finland
+  const resetMapView = () => {
+    if (!mapInstanceRef.current) return
+    mapInstanceRef.current.setView([64.0, 26.0], 5)
+  }
+
+  // Expose the reset function to parent component
+  useImperativeHandle(ref, () => ({
+    resetMapView
+  }))
 
   const updateMapStyle = (map, L, style) => {
     map.eachLayer((layer) => {
@@ -212,7 +223,7 @@ export default function MapComponent({
             <div class="relative">
               <div class="absolute -top-5 -left-5 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-white">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
+                  <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4.5 0 0 0-9 0H3a9 9 0 0 1 9-9Z"></path>
                   <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"></path>
                 </svg>
               </div>
@@ -259,17 +270,13 @@ export default function MapComponent({
         harborData.forEach((harbor) => {
           if (!harbor?.coordinates?.lat || !harbor?.coordinates?.lng) return
 
-          // !! Do NOT use isCurrent / highlight the correct harbor !!
-          // That would reveal the answer to the player.
-          // const isCurrent = currentHarbor && harbor.id === currentHarbor.id  ← commented out
-
           // Is this harbor the player's current guess selection?
           const isSelected =
             selectedLocation &&
             Math.abs(harbor.coordinates.lat - selectedLocation.lat) < 0.0001 &&
             Math.abs(harbor.coordinates.lng - selectedLocation.lng) < 0.0001
 
-          // All unselected harbors use the same neutral blue — no amber/star for correct answer
+          // All unselected harbors use the same neutral blue
           const color = isSelected ? "#ef4444" : "#2563eb"
 
           const icon = L.divIcon({
@@ -283,14 +290,14 @@ export default function MapComponent({
                     <path d="M5 12H2a10 10 0 0 0 20 0h-3"></path>
                   </svg>
                 </div>
-                <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color:${color}">
+                <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color:${color}">
                   ✓ ${harbor.name}
                 </div>
               </div>` : `
               <div class="relative" style="cursor:pointer">
                 <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center shadow-md border border-white" style="background-color:${color}">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4 0 0 0-9 0H3a9 9 0 0 1 9-9Z"/>
+                    <path d="M12 3a9 9 0 0 1 9 9h-4.5a4.5 4.5 0 0 0-9 0H3a9 9 0 0 1 9-9Z"/>
                     <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"/>
                   </svg>
                 </div>
@@ -324,9 +331,7 @@ export default function MapComponent({
     }
     update()
     return () => { harborMarkersRef.current.forEach((m) => m.remove()); harborMarkersRef.current = [] }
-  // selectedLocation in deps so highlight updates when selection changes
   }, [mapLoaded, showHarborNames, harborData, selectedLocation, t])
-  // NOTE: currentHarbor intentionally removed from deps — was causing correct harbor to be revealed
 
   // ── Game history markers ──────────────────────────────────────────────────
   useEffect(() => {
@@ -511,4 +516,8 @@ export default function MapComponent({
       </div>
     </div>
   )
-}
+})
+
+MapComponent.displayName = "MapComponent"
+
+export default MapComponent
