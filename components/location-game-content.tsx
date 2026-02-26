@@ -50,10 +50,8 @@ export default function LocationGameContent() {
   const { t, language } = useLanguage()
   const { user } = useAuth()
 
-  // Add map ref with proper typing
-  const mapRef = useRef<{ resetMapView: () => void }>(null)
-
-  // State definitions
+  // All state declarations first
+  const [isDarkMode, setIsDarkMode] = useState(false)
   const [currentHarbor, setCurrentHarbor] = useState(null)
   const [harbors, setHarbors] = useState([])
   const [loading, setLoading] = useState(true)
@@ -75,6 +73,28 @@ export default function LocationGameContent() {
   const [showFinalResults, setShowFinalResults] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [lastGuessLocation, setLastGuessLocation] = useState(null)
+
+  // All refs after states
+  const mapRef = useRef<{ resetMapView: () => void }>(null)
+
+  // Track dark mode changes - moved after all state declarations
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains('dark'))
+    }
+
+    // Check initially
+    checkDarkMode()
+
+    // Watch for changes
+    const observer = new MutationObserver(checkDarkMode)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class']
+    })
+
+    return () => observer.disconnect()
+  }, [])
 
   // Helper functions
   const getCurrentHarborState = () => {
@@ -187,15 +207,12 @@ export default function LocationGameContent() {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const gameDuration = gameStartTime ? Math.round((Date.now() - gameStartTime) / 1000) : 0;
 
-      // Generate session ID for anonymous users
       const sessionId = currentUser?.id
         ? null
         : `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      // Calculate game stats
       const correctAnswers = gameHistory.filter(g => g.correct).length;
 
-      // Prepare the game data for game_scores table
       const gameData = {
         game_type: 'location',
         score: score,
@@ -221,7 +238,6 @@ export default function LocationGameContent() {
 
       console.log("Game data to save:", gameData);
 
-      // Save to game_scores table
       const { data: gameScore, error: scoreError } = await supabase
         .from('game_scores')
         .insert(gameData)
@@ -235,7 +251,6 @@ export default function LocationGameContent() {
 
       console.log("Game score saved successfully:", gameScore.id);
 
-      // Save to leaderboard_entries table WITHOUT accuracy_percentage (it's generated)
       const { error: leaderboardError } = await supabase
         .from('leaderboard_entries')
         .insert({
@@ -276,7 +291,6 @@ export default function LocationGameContent() {
       setHasGuessed(false)
       setFeedback(null)
 
-      // Reset the map view to show all of Finland
       if (mapRef.current) {
         mapRef.current.resetMapView()
       }
@@ -319,7 +333,6 @@ export default function LocationGameContent() {
     setHasGuessed(false)
     setFeedback(null)
 
-    // Reset the map view when starting a new game
     if (mapRef.current) {
       mapRef.current.resetMapView()
     }
@@ -482,9 +495,11 @@ export default function LocationGameContent() {
                 <div className="flex items-center justify-between mb-2 sm:mb-3">
                   <div className="flex items-center gap-1 sm:gap-2">
                     {showHarborNames
-                      ? <Eye className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600" />
-                      : <EyeOff className="h-3 w-3 sm:h-4 sm:w-4 text-slate-500" />}
-                    <Label className="text-xs sm:text-sm font-medium">{t("map.showHarborNames")}</Label>
+                      ? <Eye className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 dark:text-blue-400" />
+                      : <EyeOff className="h-3 w-3 sm:h-4 sm:w-4 text-slate-500 dark:text-slate-400" />}
+                    <span className="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200">
+                      {t("map.showHarborNames")}
+                    </span>
                   </div>
                   <Switch checked={showHarborNames} onCheckedChange={setShowHarborNames} />
                 </div>
