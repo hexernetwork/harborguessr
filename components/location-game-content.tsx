@@ -168,13 +168,16 @@ export default function LocationGameContent() {
     const isCorrect = distanceKm <= 150 // Consider <=150km as "correct" for game progression
 
     if (isExactMatch) {
+      // Full points only for exact matches
       attemptScore = 100
     } else if (distanceKm <= 150) {
+      // Non-linear scoring that favors closer guesses
       const normalizedDistance = Math.min(distanceKm / 150, 1)
       const logDistance = Math.log10(normalizedDistance * 9 + 1)
       attemptScore = Math.max(10, 100 - (logDistance * 90))
     } else {
-      attemptScore = Math.max(5, 10 - ((distanceKm - 150) * 0.05))
+      // For very far guesses (>150km), give 0 points
+      attemptScore = 0
     }
 
     const roundedScore = Math.round(attemptScore)
@@ -207,6 +210,7 @@ export default function LocationGameContent() {
       setShowSuccessModal(true)
     }
   }
+
 
 
   const saveCompleteGameToSupabase = async (nickname = null) => {
