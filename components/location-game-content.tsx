@@ -152,6 +152,7 @@ export default function LocationGameContent() {
     const { lat: aLat, lng: aLng } = currentHarbor.coordinates
     const { lat: sLat, lng: sLng } = selectedLocation
 
+    // Calculate distance in km
     const R = 6371
     const dLat = ((aLat - sLat) * Math.PI) / 180
     const dLng = ((aLng - sLng) * Math.PI) / 180
@@ -159,24 +160,35 @@ export default function LocationGameContent() {
       Math.sin(dLat / 2) ** 2 +
       Math.cos((sLat * Math.PI) / 180) * Math.cos((aLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
     const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    const distanceKm = Math.round(distance)
 
-    const isCorrect = distance <= 20
-    setLastGuessLocation(selectedLocation)
-
+    // Calculate score based on distance with 150km threshold
     let attemptScore = 0
-    if (isCorrect) {
+    const isExactMatch = distanceKm === 0
+    const isCorrect = distanceKm <= 150 // Consider <=150km as "correct" for game progression
+
+    if (isExactMatch) {
       attemptScore = 100
-      setScore(prev => prev + attemptScore)
+    } else if (distanceKm <= 150) {
+      const normalizedDistance = Math.min(distanceKm / 150, 1)
+      const logDistance = Math.log10(normalizedDistance * 9 + 1)
+      attemptScore = Math.max(10, 100 - (logDistance * 90))
+    } else {
+      attemptScore = Math.max(5, 10 - ((distanceKm - 150) * 0.05))
     }
+
+    const roundedScore = Math.round(attemptScore)
+    setScore(prev => prev + roundedScore)
+    setLastGuessLocation(selectedLocation)
 
     setGameHistory(prev => [...prev, {
       harborId: currentHarbor.id,
       harborName: currentHarbor.name,
       round,
       attempts: 1,
-      distance: Math.round(distance),
+      distance: distanceKm,
       correct: isCorrect,
-      score: attemptScore,
+      score: roundedScore,
       timestamp: Date.now(),
       selectedLocation,
     }])
@@ -185,19 +197,17 @@ export default function LocationGameContent() {
     setSelectedLocation(null)
     setSearchedLocation(null)
 
-    if (isCorrect) {
-      setFeedback({
-        type: "success",
-        message: t("locationGame.correctMessage", { harborName: currentHarbor.name, score: attemptScore }),
-      })
+    // Only show points in feedback, no "Oikein!" text
+    setFeedback({
+      type: isCorrect ? "success" : "warning",
+      message: `${roundedScore} ${t("leaderboard.points")}`,
+    })
+
+    if (isExactMatch) {
       setShowSuccessModal(true)
-    } else {
-      setFeedback({
-        type: "warning",
-        message: `${t("locationGame.tryAgain")}: ${Math.round(distance)} km`,
-      })
     }
   }
+
 
   const saveCompleteGameToSupabase = async (nickname = null) => {
     if (gameCompleted) return;
@@ -427,22 +437,14 @@ export default function LocationGameContent() {
               </div>
 
               {/* Feedback */}
+              {/* Feedback - Modified to only show message */}
               {feedback && (
                 <Alert className={`mb-3 sm:mb-4 ${
                   feedback.type === "success" ? "bg-green-50 border-green-200 dark:bg-green-900/20" :
                   feedback.type === "error" ? "bg-red-50 border-red-200 dark:bg-red-900/20" :
                   "bg-amber-50 border-amber-200 dark:bg-amber-900/20"
                 }`}>
-                  <AlertTitle className={`text-sm sm:text-base ${
-                    feedback.type === "success" ? "text-green-800 dark:text-green-300" :
-                    feedback.type === "error" ? "text-red-800 dark:text-red-300" :
-                    "text-amber-800 dark:text-amber-300"
-                  }`}>
-                    {feedback.type === "success" ? t("locationGame.correct") :
-                     feedback.type === "error" ? t("locationGame.gameOver") :
-                     t("locationGame.tryAgain")}
-                  </AlertTitle>
-                  <AlertDescription className={`text-xs sm:text-sm ${
+                  <AlertDescription className={`text-sm sm:text-base ${
                     feedback.type === "success" ? "text-green-700 dark:text-green-400" :
                     feedback.type === "error" ? "text-red-700 dark:text-red-400" :
                     "text-amber-700 dark:text-amber-400"
@@ -451,7 +453,6 @@ export default function LocationGameContent() {
                   </AlertDescription>
                 </Alert>
               )}
-
               {/* Single random hint */}
               <div className="mb-3 sm:mb-4">
                 <h3 className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
@@ -473,23 +474,21 @@ export default function LocationGameContent() {
                 </div>
               </div>
 
-              {/* Reveal harbor info after guess */}
+              {/* Reveal harbor info after guess - Remove checkmark */}
               {hasGuessed && currentHarbor && (
                 <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-medium text-slate-800 dark:text-white text-sm sm:text-base truncate">
                       {currentHarbor.name}
                     </h3>
-                    {currentState.hasCorrectAnswer && (
-                      <span className="text-green-600 dark:text-green-400 text-sm flex-shrink-0">✓</span>
-                    )}
+                    {/* Removed the checkmark span */}
                   </div>
                   <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                     {currentHarbor.description || t("common.noData")}
                   </p>
                 </div>
               )}
-
+              
               {/* Map controls + search */}
               <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
                 <div className="flex items-center justify-between mb-2 sm:mb-3">

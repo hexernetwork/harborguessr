@@ -291,7 +291,7 @@ const MapComponent = forwardRef(({
                   </svg>
                 </div>
                 <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color:${color}">
-                  ✓ ${harbor.name}
+                  ${harbor.name}
                 </div>
               </div>` : `
               <div class="relative" style="cursor:pointer">
@@ -355,7 +355,7 @@ const MapComponent = forwardRef(({
                   <span class="text-white text-xs font-bold">${index + 1}</span>
                 </div>
                 <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 text-white px-1 py-0.5 rounded text-xs font-bold whitespace-nowrap shadow-md" style="background-color:${color}">
-                  ${guess.correct ? t("locationGame.correct") : `${Math.round(guess.distance)}km`}
+                  ${guess.distance ? `${Math.round(guess.distance)}km` : ''}
                 </div>
               </div>`,
             className: "",
@@ -441,7 +441,7 @@ const MapComponent = forwardRef(({
         </div>
       )}
 
-      {gameHistory?.length > 0 && (
+{/*      {gameHistory?.length > 0 && (
         <div className="absolute bottom-4 left-4 z-20">
           <div className="bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg shadow-lg text-xs">
             <p className="font-medium text-slate-800 dark:text-white mb-1">{t("locationGame.previousGuesses")}:</p>
@@ -458,7 +458,7 @@ const MapComponent = forwardRef(({
             </div>
           </div>
         </div>
-      )}
+      )}*/}
 
       {/* Zoom + layer controls */}
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
